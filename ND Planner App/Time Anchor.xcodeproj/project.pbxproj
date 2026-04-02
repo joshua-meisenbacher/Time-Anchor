@@ -1,0 +1,544 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000001 /* TimeAnchorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000011 /* TimeAnchorApp.swift */; };
+		A00000000000000000000002 /* Views/RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000012 /* Views/RootView.swift */; };
+		A00000000000000000000003 /* DailyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000013 /* DailyState.swift */; };
+		A00000000000000000000004 /* PlanMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000014 /* PlanMode.swift */; };
+		A00000000000000000000005 /* Anchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000015 /* Anchor.swift */; };
+		A00000000000000000000006 /* Task.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000016 /* Task.swift */; };
+		A00000000000000000000007 /* PlanVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000017 /* PlanVersion.swift */; };
+		A00000000000000000000008 /* PlanningEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000018 /* PlanningEngine.swift */; };
+		A00000000000000000000009 /* MockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000019 /* MockData.swift */; };
+		A0000000000000000000000A /* CheckInViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001A /* CheckInViewModel.swift */; };
+		A0000000000000000000000B /* TodayViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001B /* TodayViewModel.swift */; };
+		A0000000000000000000000C /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001C /* AppViewModel.swift */; };
+		A0000000000000000000000D /* DailyCheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001D /* DailyCheckInView.swift */; };
+		A0000000000000000000000E /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001E /* TodayView.swift */; };
+		A0000000000000000000000F /* AnchorListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001F /* AnchorListView.swift */; };
+		A00000000000000000000038 /* DayAssessment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000039 /* DayAssessment.swift */; };
+		A0000000000000000000003A /* ReplanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003B /* ReplanView.swift */; };
+		A0000000000000000000003C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003D /* SettingsView.swift */; };
+		A0000000000000000000003E /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003F /* AppTheme.swift */; };
+		A00000000000000000000043 /* RoutineDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000044 /* RoutineDetailView.swift */; };
+		A00000000000000000000046 /* PersonalEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000047 /* PersonalEventsView.swift */; };
+		A00000000000000000000049 /* AdaptiveIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000004A /* AdaptiveIntelligence.swift */; };
+		A0000000000000000000004B /* IntelligenceServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000004C /* IntelligenceServices.swift */; };
+		A0000000000000000000004D /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000004E /* InsightsView.swift */; };
+		A00000000000000000000050 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000020 /* Assets.xcassets */; };
+		A00000000000000000000051 /* OnboardingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000052 /* OnboardingFlowView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A00000000000000000000011 /* TimeAnchorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeAnchorApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000012 /* Views/RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/RootView.swift; sourceTree = "<group>"; };
+		A00000000000000000000013 /* DailyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyState.swift; sourceTree = "<group>"; };
+		A00000000000000000000014 /* PlanMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanMode.swift; sourceTree = "<group>"; };
+		A00000000000000000000015 /* Anchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Anchor.swift; sourceTree = "<group>"; };
+		A00000000000000000000016 /* Task.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Task.swift; sourceTree = "<group>"; };
+		A00000000000000000000017 /* PlanVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanVersion.swift; sourceTree = "<group>"; };
+		A00000000000000000000018 /* PlanningEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanningEngine.swift; sourceTree = "<group>"; };
+		A00000000000000000000019 /* MockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockData.swift; sourceTree = "<group>"; };
+		A0000000000000000000001A /* CheckInViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInViewModel.swift; sourceTree = "<group>"; };
+		A0000000000000000000001B /* TodayViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayViewModel.swift; sourceTree = "<group>"; };
+		A0000000000000000000001C /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		A0000000000000000000001D /* DailyCheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyCheckInView.swift; sourceTree = "<group>"; };
+		A0000000000000000000001E /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
+		A0000000000000000000001F /* AnchorListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnchorListView.swift; sourceTree = "<group>"; };
+		A00000000000000000000020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A00000000000000000000021 /* Time Anchor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Time Anchor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000039 /* DayAssessment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAssessment.swift; sourceTree = "<group>"; };
+		A0000000000000000000003B /* ReplanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplanView.swift; sourceTree = "<group>"; };
+		A0000000000000000000003D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A0000000000000000000003F /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		A00000000000000000000044 /* RoutineDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineDetailView.swift; sourceTree = "<group>"; };
+		A00000000000000000000047 /* PersonalEventsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalEventsView.swift; sourceTree = "<group>"; };
+		A0000000000000000000004A /* AdaptiveIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveIntelligence.swift; sourceTree = "<group>"; };
+		A0000000000000000000004C /* IntelligenceServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelligenceServices.swift; sourceTree = "<group>"; };
+		A0000000000000000000004E /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
+		A00000000000000000000052 /* OnboardingFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A00000000000000000000022 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000023 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000024 /* Time Anchor */,
+				A00000000000000000000025 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000024 /* Time Anchor */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000011 /* TimeAnchorApp.swift */,
+				A00000000000000000000040 /* DesignSystem */,
+				A00000000000000000000012 /* Views/RootView.swift */,
+				A00000000000000000000026 /* Models */,
+				A00000000000000000000027 /* ViewModels */,
+				A00000000000000000000028 /* Views */,
+				A00000000000000000000029 /* Services */,
+				A0000000000000000000002A /* Resources */,
+			);
+			path = "Time Anchor";
+			sourceTree = "<group>";
+		};
+		A00000000000000000000025 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000021 /* Time Anchor.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000026 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000013 /* DailyState.swift */,
+				A00000000000000000000039 /* DayAssessment.swift */,
+				A00000000000000000000014 /* PlanMode.swift */,
+				A00000000000000000000015 /* Anchor.swift */,
+				A00000000000000000000016 /* Task.swift */,
+				A00000000000000000000017 /* PlanVersion.swift */,
+				A0000000000000000000004A /* AdaptiveIntelligence.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000027 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000001C /* AppViewModel.swift */,
+				A0000000000000000000001A /* CheckInViewModel.swift */,
+				A0000000000000000000001B /* TodayViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000028 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000002B /* CheckIn */,
+				A0000000000000000000002C /* Today */,
+				A0000000000000000000002D /* Anchors */,
+				A00000000000000000000045 /* Routines */,
+				A00000000000000000000048 /* Events */,
+				A0000000000000000000004F /* Insights */,
+				A00000000000000000000053 /* Onboarding */,
+				A00000000000000000000041 /* Replan */,
+				A00000000000000000000042 /* Settings */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000029 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000018 /* PlanningEngine.swift */,
+				A0000000000000000000004C /* IntelligenceServices.swift */,
+				A00000000000000000000019 /* MockData.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000002A /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000020 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000002B /* CheckIn */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000001D /* DailyCheckInView.swift */,
+			);
+			path = CheckIn;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000002C /* Today */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000001E /* TodayView.swift */,
+			);
+			path = Today;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000002D /* Anchors */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000001F /* AnchorListView.swift */,
+			);
+			path = Anchors;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000040 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000003F /* AppTheme.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000041 /* Replan */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000003B /* ReplanView.swift */,
+			);
+			path = Replan;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000042 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000003D /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000045 /* Routines */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000044 /* RoutineDetailView.swift */,
+			);
+			path = Routines;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000048 /* Events */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000047 /* PersonalEventsView.swift */,
+			);
+			path = Events;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000004F /* Insights */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000004E /* InsightsView.swift */,
+			);
+			path = Insights;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000053 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000052 /* OnboardingFlowView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A0000000000000000000002E /* Time Anchor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A0000000000000000000002F /* Build configuration list for PBXNativeTarget "Time Anchor" */;
+			buildPhases = (
+				A00000000000000000000030 /* Sources */,
+				A00000000000000000000022 /* Frameworks */,
+				A00000000000000000000031 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Time Anchor";
+			packageProductDependencies = (
+			);
+			productName = "Time Anchor";
+			productReference = A00000000000000000000021 /* Time Anchor.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000000000000000000032 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					A0000000000000000000002E = {
+						CreatedOnToolsVersion = 26.2;
+					};
+				};
+			};
+			buildConfigurationList = A00000000000000000000033 /* Build configuration list for PBXProject "Time Anchor" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000023;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A00000000000000000000025 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A0000000000000000000002E /* Time Anchor */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00000000000000000000031 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000050 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A00000000000000000000030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A0000000000000000000000C /* AppViewModel.swift in Sources */,
+				A00000000000000000000049 /* AdaptiveIntelligence.swift in Sources */,
+				A00000000000000000000005 /* Anchor.swift in Sources */,
+				A0000000000000000000000F /* AnchorListView.swift in Sources */,
+				A0000000000000000000000A /* CheckInViewModel.swift in Sources */,
+				A00000000000000000000038 /* DayAssessment.swift in Sources */,
+				A00000000000000000000003 /* DailyState.swift in Sources */,
+				A0000000000000000000000D /* DailyCheckInView.swift in Sources */,
+				A0000000000000000000003E /* AppTheme.swift in Sources */,
+				A00000000000000000000009 /* MockData.swift in Sources */,
+				A00000000000000000000046 /* PersonalEventsView.swift in Sources */,
+				A00000000000000000000004 /* PlanMode.swift in Sources */,
+				A00000000000000000000007 /* PlanVersion.swift in Sources */,
+				A0000000000000000000004B /* IntelligenceServices.swift in Sources */,
+				A0000000000000000000004D /* InsightsView.swift in Sources */,
+				A00000000000000000000051 /* OnboardingFlowView.swift in Sources */,
+				A00000000000000000000008 /* PlanningEngine.swift in Sources */,
+				A00000000000000000000043 /* RoutineDetailView.swift in Sources */,
+				A0000000000000000000003A /* ReplanView.swift in Sources */,
+				A00000000000000000000002 /* Views/RootView.swift in Sources */,
+				A0000000000000000000003C /* SettingsView.swift in Sources */,
+				A00000000000000000000006 /* Task.swift in Sources */,
+				A00000000000000000000001 /* TimeAnchorApp.swift in Sources */,
+				A0000000000000000000000E /* TodayView.swift in Sources */,
+				A0000000000000000000000B /* TodayViewModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000034 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = "Time Anchor/Resources/TimeAnchor.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GCR4FS73NW;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Time Anchor";
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLName = "GoogleOAuth";
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLSchemes_0 = timeanchorgoogle;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Time Anchor uses your calendars to build a more realistic support plan around your commitments, transitions, and buffers.";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "Time Anchor reads health data like sleep, heart rate, hydration, and activity so it can estimate your likely capacity and build gentler plans.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Time Anchor reads health data like sleep, heart rate, hydration, and activity so it can estimate your likely capacity and build gentler plans.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Time Anchor may later write supportive health summaries, but currently only reads your health data to personalize your plan.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.TimeAnchor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A00000000000000000000035 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = "Time Anchor/Resources/TimeAnchor.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GCR4FS73NW;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Time Anchor";
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLName = "GoogleOAuth";
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLSchemes_0 = timeanchorgoogle;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Time Anchor uses your calendars to build a more realistic support plan around your commitments, transitions, and buffers.";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "Time Anchor reads health data like sleep, heart rate, hydration, and activity so it can estimate your likely capacity and build gentler plans.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Time Anchor reads health data like sleep, heart rate, hydration, and activity so it can estimate your likely capacity and build gentler plans.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Time Anchor may later write supportive health summaries, but currently only reads your health data to personalize your plan.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.TimeAnchor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		A00000000000000000000036 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A00000000000000000000037 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A0000000000000000000002F /* Build configuration list for PBXNativeTarget "Time Anchor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000034 /* Debug */,
+				A00000000000000000000035 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000033 /* Build configuration list for PBXProject "Time Anchor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000036 /* Debug */,
+				A00000000000000000000037 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000000000000000000032 /* Project object */;
+}

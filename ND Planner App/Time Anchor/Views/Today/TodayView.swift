@@ -116,6 +116,11 @@ struct TodayView: View {
             }
             .background(AppTheme.Colors.canvas.ignoresSafeArea())
             .navigationTitle("Today")
+            .onAppear {
+                if visualSupportMode == .lowerStimulation {
+                    dayVisualStyle = .timeline
+                }
+            }
         }
     }
 
@@ -176,7 +181,11 @@ struct TodayView: View {
     }
 
     private var shouldShowCommentary: Bool {
-        false
+        adaptationSummary != nil
+        || !trimmedAdaptationReasons.isEmpty
+        || personalizedBaselineSummary != nil
+        || featuredInsight != nil
+        || !capacityDriverHighlights.isEmpty
     }
 
     private var modePicker: some View {
@@ -271,6 +280,8 @@ struct TodayView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 180)
+                    .disabled(visualSupportMode == .lowerStimulation)
+                    .opacity(visualSupportMode == .lowerStimulation ? 0.55 : 1)
                 }
 
                 if dayVisualStyle == .timeline {
@@ -389,7 +400,8 @@ struct TodayView: View {
                 Text(adaptationSummary ?? "")
                     .font(AppTheme.Typography.supporting)
                     .foregroundStyle(AppTheme.Colors.secondaryText)
-                ForEach(adaptationReasons, id: \.self) { reason in
+                    .lineLimit(2)
+                ForEach(trimmedAdaptationReasons, id: \.self) { reason in
                     HStack(alignment: .top, spacing: 8) {
                         Circle()
                             .fill(AppTheme.Colors.primaryMuted)
@@ -504,7 +516,7 @@ struct TodayView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(capacityDrivers, id: \.self) { driver in
+                ForEach(capacityDriverHighlights, id: \.self) { driver in
                     HStack(alignment: .top, spacing: 10) {
                         Circle()
                             .fill(AppTheme.Colors.primary)
@@ -549,6 +561,7 @@ struct TodayView: View {
                 Text(personalizedBaselineSummary ?? "")
                     .font(AppTheme.Typography.supporting)
                     .foregroundStyle(AppTheme.Colors.secondaryText)
+                    .lineLimit(visualSupportMode == .lowerStimulation ? 2 : 3)
             }
         }
     }
@@ -563,11 +576,36 @@ struct TodayView: View {
                 Text(featuredInsight?.summary ?? "")
                     .font(AppTheme.Typography.supporting)
                     .foregroundStyle(AppTheme.Colors.secondaryText)
+                    .lineLimit(2)
                 Text(featuredInsight?.supportingDetail ?? "")
                     .font(AppTheme.Typography.caption)
                     .foregroundStyle(AppTheme.Colors.secondaryText)
+                    .lineLimit(2)
             }
         }
+    }
+
+    private var trimmedAdaptationReasons: [String] {
+        let limit = visualSupportMode == .lowerStimulation ? 1 : 2
+        return uniqueNonEmpty(adaptationReasons).prefix(limit).map { $0 }
+    }
+
+    private var capacityDriverHighlights: [String] {
+        let limit = visualSupportMode == .lowerStimulation ? 2 : 3
+        return uniqueNonEmpty(capacityDrivers).prefix(limit).map { $0 }
+    }
+
+    private func uniqueNonEmpty(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var unique: [String] = []
+        for value in values {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if seen.insert(trimmed).inserted {
+                unique.append(trimmed)
+            }
+        }
+        return unique
     }
 
     private var currentAnchorCard: some View {

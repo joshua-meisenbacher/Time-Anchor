@@ -411,6 +411,13 @@ struct SettingsView: View {
                     Text(appStore.reminderPreviewPlan.sampleCopy)
                         .font(AppTheme.Typography.caption)
                         .foregroundStyle(AppTheme.Colors.secondaryText)
+                    Text("Why this plan")
+                        .font(AppTheme.Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.secondaryText)
+                        .padding(.top, 2)
+                    Text(appStore.reminderPreviewPlan.escalationRule)
+                        .font(AppTheme.Typography.caption)
+                        .foregroundStyle(AppTheme.Colors.secondaryText)
                 }
 
                 Divider()

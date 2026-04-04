@@ -619,13 +619,6 @@ struct TodayView: View {
         return uniqueNonEmpty(capacityDrivers).prefix(limit).map { $0 }
     }
 
-    private var adaptationNextStepText: String? {
-        if let suggestedReplan {
-            return suggestedReplan.reason.recommendation
-        }
-        return liveExecutionSignals.first?.supportText
-    }
-
     private func uniqueNonEmpty(_ values: [String]) -> [String] {
         var seen = Set<String>()
         var unique: [String] = []

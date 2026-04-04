@@ -23,15 +23,6 @@ protocol IntelligenceDataQualityChecking {
     func assess(outcomes: [DayOutcome], healthSnapshots: [DailyHealthSnapshot], asOf date: Date) -> IntelligenceDataQualityReport
 }
 
-enum AdaptiveHeuristicThresholds {
-    static let replanCriticalOverload = 0.8
-    static let replanHighOverloadFromFullMode = 0.62
-    static let replanRebuildPressure = 0.7
-    static let replanStartFriction = 0.65
-    static let replanTransitionPressure = 0.6
-    static let replanSensoryOverload = 0.72
-}
-
 protocol ReminderOrchestrator {
     func reminderPlan(
         for task: Task,
@@ -608,6 +599,99 @@ struct HeuristicReminderDecisionScorer: ReminderDecisionScoring {
     }
 }
 
+struct ReminderDecisionFeatures {
+    let contextDate: Date
+    let dailyState: DailyState
+    let estimatedState: EstimatedState
+    let profileSettings: ProfileSettings
+    let baselines: PersonalizedBaselines
+    let behaviorPressure: Bool
+    let overstimulationRisk: Bool
+    let tooLateCount: Int
+    let tooEarlyCount: Int
+    let tooIntenseCount: Int
+    let alreadyMovingCount: Int
+}
+
+struct ReminderDecisionScore {
+    let leadTimeAdjustmentMinutes: Int
+    let repeatIntervalAdjustmentMinutes: Int
+    let maxRepeatsAdjustment: Int
+}
+
+protocol ReminderDecisionScoring {
+    func score(features: ReminderDecisionFeatures) -> ReminderDecisionScore
+}
+
+struct HeuristicReminderDecisionScorer: ReminderDecisionScoring {
+    func score(features: ReminderDecisionFeatures) -> ReminderDecisionScore {
+        var leadAdjustment = 0
+        var repeatAdjustment = 0
+        var repeatsAdjustment = 0
+        let hour = Calendar.current.component(.hour, from: features.contextDate)
+
+        if features.behaviorPressure || features.tooLateCount >= 2 {
+            leadAdjustment += 3
+        }
+        if features.tooEarlyCount >= 2 {
+            leadAdjustment -= 2
+        }
+        if features.baselines.cueOverstimulationRate >= 0.25 || features.overstimulationRisk {
+            repeatAdjustment += 3
+            repeatsAdjustment -= 1
+        }
+        if features.baselines.cueAlreadyMovingRate >= 0.3 || features.alreadyMovingCount >= 2 {
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        }
+        if let quietStart = features.baselines.noReminderStartHour,
+           let quietEnd = features.baselines.noReminderEndHour,
+           Self.isInQuietHours(hour: hour, startHour: quietStart, endHour: quietEnd) {
+            repeatAdjustment += 4
+            repeatsAdjustment -= 1
+        }
+        switch features.profileSettings.neurotype {
+        case .adhd:
+            repeatAdjustment -= 1
+            repeatsAdjustment += 1
+        case .asd:
+            leadAdjustment += 2
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        case .audhd:
+            leadAdjustment += 1
+            repeatAdjustment += 1
+        case .neurotypical, .other:
+            break
+        }
+        switch features.profileSettings.userRole {
+        case .selfPlanner:
+            break
+        case .caregiver:
+            leadAdjustment += 2
+            repeatAdjustment += 1
+        case .familyCoordinator:
+            leadAdjustment += 2
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        }
+
+        return ReminderDecisionScore(
+            leadTimeAdjustmentMinutes: leadAdjustment,
+            repeatIntervalAdjustmentMinutes: repeatAdjustment,
+            maxRepeatsAdjustment: repeatsAdjustment
+        )
+    }
+
+    private static func isInQuietHours(hour: Int, startHour: Int, endHour: Int) -> Bool {
+        if startHour == endHour { return false }
+        if startHour < endHour {
+            return hour >= startHour && hour < endHour
+        }
+        return hour >= startHour || hour < endHour
+    }
+}
+
 struct BaselineAdaptiveProfileStore: AdaptiveProfileStore {
     private let averagingStrategy: BaselineAveragingStrategy
 
@@ -1023,7 +1107,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
         )
         let score = scoring.score(features: features)
 
-        if score.overloadPressure >= AdaptiveHeuristicThresholds.replanCriticalOverload {
+        if score.overloadPressure >= 0.8 {
             return ReplanSuggestion(
                 reason: .overloaded,
                 recommendedMode: .minimum,
@@ -1034,7 +1118,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
             )
         }
 
-        if score.overloadPressure >= AdaptiveHeuristicThresholds.replanHighOverloadFromFullMode, currentMode == .full {
+        if score.overloadPressure >= 0.62, currentMode == .full {
             return ReplanSuggestion(
                 reason: .overloaded,
                 recommendedMode: .reduced,
@@ -1048,7 +1132,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
         let signals = Set(liveExecutionState.signals)
         guard !signals.isEmpty || liveExecutionState.shouldSuggestReplan else { return nil }
 
-        if score.rebuildPressure >= AdaptiveHeuristicThresholds.replanRebuildPressure || signals.contains(.routinePausedTooLong) || signals.contains(.repeatedRebuilds) {
+        if score.rebuildPressure >= 0.7 || signals.contains(.routinePausedTooLong) || signals.contains(.repeatedRebuilds) {
             return ReplanSuggestion(
                 reason: .overloaded,
                 recommendedMode: .minimum,
@@ -1059,7 +1143,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
             )
         }
 
-        if score.startFrictionPressure >= AdaptiveHeuristicThresholds.replanStartFriction || (signals.contains(.taskStartingLate) && signals.contains(.taskNotStartedAfterCue)) {
+        if score.startFrictionPressure >= 0.65 || (signals.contains(.taskStartingLate) && signals.contains(.taskNotStartedAfterCue)) {
             return ReplanSuggestion(
                 reason: .stuck,
                 recommendedMode: currentMode == .full ? .reduced : currentMode,
@@ -1070,7 +1154,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
             )
         }
 
-        if score.transitionPressure >= AdaptiveHeuristicThresholds.replanTransitionPressure || signals.contains(.routineCueNotLanding) || liveExecutionState.transitionWindow.needsAttention {
+        if score.transitionPressure >= 0.6 || signals.contains(.routineCueNotLanding) || liveExecutionState.transitionWindow.needsAttention {
             return ReplanSuggestion(
                 reason: .transition,
                 recommendedMode: currentMode == .full ? .reduced : currentMode,
@@ -1081,7 +1165,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
             )
         }
 
-        if score.overloadPressure >= AdaptiveHeuristicThresholds.replanSensoryOverload || estimatedState.executionState == .overloaded || estimatedState.overloadRisk >= 0.75 {
+        if score.overloadPressure >= 0.72 || estimatedState.executionState == .overloaded || estimatedState.overloadRisk >= 0.75 {
             return ReplanSuggestion(
                 reason: .sensory,
                 recommendedMode: .minimum,
@@ -1129,13 +1213,6 @@ protocol ReplanDecisionScoring {
 
 struct HeuristicReplanDecisionScorer: ReplanDecisionScoring {
     func score(features: ReplanDecisionFeatures) -> ReplanDecisionScore {
-        let evidenceFactor = min(
-            1.0,
-            max(
-                0.55,
-                0.45 + (Double(features.liveExecutionState.signals.count) * 0.18) + (features.liveHealthState.confidence * 0.37)
-            )
-        )
         let healthPressure: Double = {
             switch features.liveHealthState.status {
             case .stable:
@@ -1149,8 +1226,7 @@ struct HeuristicReplanDecisionScorer: ReplanDecisionScoring {
         let executionSignalPressure = min(1.0, Double(features.liveExecutionState.signals.count) * 0.18)
         let estimatedOverloadPressure = min(1.0, features.estimatedState.overloadRisk + (features.estimatedState.executionState == .overloaded ? 0.15 : 0))
         let modeMismatchPressure = features.assessment.recommendedMode == features.currentMode ? 0.0 : 0.08
-        let rawOverloadPressure = max(healthPressure, (estimatedOverloadPressure * 0.65) + (executionSignalPressure * 0.35) + modeMismatchPressure)
-        let overloadPressure = min(1.0, rawOverloadPressure * evidenceFactor)
+        let overloadPressure = min(1.0, max(healthPressure, (estimatedOverloadPressure * 0.65) + (executionSignalPressure * 0.35) + modeMismatchPressure))
 
         let transitionRisk = features.liveExecutionState.transitionWindow.risk
         let transitionWindowPressure = features.liveExecutionState.transitionWindow.needsAttention ? 0.2 : 0
@@ -1165,7 +1241,7 @@ struct HeuristicReplanDecisionScorer: ReplanDecisionScoring {
                 return 0
             }
         }()
-        let transitionPressure = min(1.0, (transitionRisk + transitionWindowPressure + transitionSignalPressure + profileTransitionBias) * evidenceFactor)
+        let transitionPressure = min(1.0, transitionRisk + transitionWindowPressure + transitionSignalPressure + profileTransitionBias)
 
         let startSignals = features.liveExecutionState.signals.filter { $0 == .taskStartingLate || $0 == .taskNotStartedAfterCue }.count
         let startFrictionBias: Double = {
@@ -1178,7 +1254,7 @@ struct HeuristicReplanDecisionScorer: ReplanDecisionScoring {
                 return 0
             }
         }()
-        let startFrictionPressure = min(1.0, ((Double(startSignals) * 0.35) + (features.estimatedState.executionState == .drifting ? 0.15 : 0) + startFrictionBias) * evidenceFactor)
+        let startFrictionPressure = min(1.0, (Double(startSignals) * 0.35) + (features.estimatedState.executionState == .drifting ? 0.15 : 0) + startFrictionBias)
 
         let roleRebuildBias: Double = {
             switch features.profileSettings.userRole {
@@ -1192,9 +1268,9 @@ struct HeuristicReplanDecisionScorer: ReplanDecisionScoring {
         }()
         let rebuildPressure = min(
             1.0,
-            ((features.liveExecutionState.signals.contains(.repeatedRebuilds) ? 0.7 : 0.0)
+            (features.liveExecutionState.signals.contains(.repeatedRebuilds) ? 0.7 : 0.0)
                 + (features.liveExecutionState.signals.contains(.routinePausedTooLong) ? 0.3 : 0.0)
-                + roleRebuildBias) * evidenceFactor
+                + roleRebuildBias
         )
 
         return ReplanDecisionScore(

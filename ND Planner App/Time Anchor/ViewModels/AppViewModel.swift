@@ -129,8 +129,6 @@ final class AppStore: ObservableObject {
     @Published private(set) var insights: [InsightCard]
     @Published private(set) var intelligenceReplaySummary: IntelligenceReplaySummary
     @Published private(set) var intelligenceDataQuality: IntelligenceDataQualityReport
-    @Published var intelligenceFeatureFlags: IntelligenceFeatureFlags
-    @Published private(set) var adaptiveDecisionTelemetry: [AdaptiveDecisionTelemetry]
 
     @Published var dailyState: DailyState
     @Published var plans: [PlanVersion]
@@ -276,8 +274,6 @@ final class AppStore: ObservableObject {
         insights = []
         intelligenceReplaySummary = .empty
         intelligenceDataQuality = .empty
-        intelligenceFeatureFlags = IntelligenceFeatureFlags()
-        adaptiveDecisionTelemetry = []
         lastReplanPromptAt = nil
         let initialEstimatedState = stateEstimator.estimate(
             context: initialContext,
@@ -2253,18 +2249,14 @@ final class AppStore: ObservableObject {
             routinePauseStartedAt: routinePauseStartedAt,
             estimatedState: estimatedState
         )
-        if intelligenceFeatureFlags.adaptiveReplanEnabled {
-            adaptiveReplanSuggestion = adaptiveReplanEngine.suggest(
-                liveExecutionState: liveExecutionState,
-                liveHealthState: liveHealthState,
-                estimatedState: estimatedState,
-                currentMode: selectedMode,
-                assessment: assessment,
-                profileSettings: profileSettings
-            )
-        } else {
-            adaptiveReplanSuggestion = nil
-        }
+        adaptiveReplanSuggestion = adaptiveReplanEngine.suggest(
+            liveExecutionState: liveExecutionState,
+            liveHealthState: liveHealthState,
+            estimatedState: estimatedState,
+            currentMode: selectedMode,
+            assessment: assessment,
+            profileSettings: profileSettings
+        )
         insights = insightsEngine.generateInsights(
             outcomes: profileOutcomes,
             baselines: baselines,
@@ -2277,14 +2269,6 @@ final class AppStore: ObservableObject {
             healthSnapshots: healthSnapshots,
             asOf: Date()
         )
-        adaptiveReplanSuggestion = gatedReplanSuggestion(adaptiveReplanSuggestion)
-        if let adaptiveReplanSuggestion {
-            appendTelemetry(
-                kind: .replan,
-                title: adaptiveReplanSuggestion.title,
-                detail: "Reason: \(adaptiveReplanSuggestion.reason.title) • Mode: \(adaptiveReplanSuggestion.recommendedMode.title)"
-            )
-        }
         if let suggestion = adaptiveReplanSuggestion, suggestion.shouldPrompt, shouldPromptReplan(now: Date()) {
             replanStore.selectedReason = suggestion.reason
             lastReplanPromptAt = Date()

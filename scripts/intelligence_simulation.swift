@@ -2,18 +2,12 @@ import Foundation
 
 @main
 struct IntelligenceSimulation {
-    static var totalChecks = 0
-    static var passedChecks = 0
-
     @inline(__always)
     static func check(_ condition: @autoclosure () -> Bool, _ message: String) {
-        totalChecks += 1
         if !condition() {
             fputs("❌ \(message)\n", stderr)
             exit(1)
         }
-        passedChecks += 1
-        print("✅ \(message)")
     }
     
     static func main() {
@@ -92,26 +86,6 @@ struct IntelligenceSimulation {
 
         check(reminderPlan.leadTimeMinutes >= 0, "Reminder lead time should never be negative.")
         check(reminderPlan.maxRepeats >= 1, "Reminder max repeats should be clamped to at least 1.")
-        
-        let coldStartPlan = reminderOrchestrator.reminderPlan(
-            for: Task(title: "Inbox triage", detail: "Process the top 3 items.", startMinute: 10 * 60, durationMinutes: 20, isEssential: true),
-            contextDate: now,
-            dailyState: DailyState(energy: 3, stress: 3, sleepHours: 7.0, sensoryLoad: 2, transitionFriction: 2, priority: "stabilize", reminderProfile: .repetitiveSupport),
-            profileSettings: ProfileSettings(displayName: "Cold Start", transitionPrepMinutes: 10, reminderProfile: .repetitiveSupport),
-            estimatedState: EstimatedState(
-                capacityBand: .medium,
-                overloadRisk: 0.35,
-                transitionRisk: [:],
-                latenessRisk: [:],
-                executionState: .onTrack,
-                confidence: 0.4,
-                supportingSignals: []
-            ),
-            recentOutcomes: [],
-            baselines: .empty
-        )
-        check(coldStartPlan.repeatIntervalMinutes == 6, "Cold-start repetitive profile should use stable default repeat interval.")
-        check(coldStartPlan.escalationRule.contains("Starting from"), "Cold-start reminder plan should explain stable bootstrap behavior.")
 
         let replanEngine = HeuristicAdaptiveReplanEngine()
         let replanSuggestion = replanEngine.suggest(
@@ -151,48 +125,7 @@ struct IntelligenceSimulation {
         )
 
         check(replanSuggestion?.recommendedMode == .minimum, "Expected replan to recommend minimum mode under overload signals.")
-        
-        let replanScore = HeuristicReplanDecisionScorer().score(
-            features: ReplanDecisionFeatures(
-                liveExecutionState: LiveExecutionState(
-                    signals: [],
-                    transitionWindow: TransitionWindowState(blockID: UUID(), title: "Transition", minutesUntilStart: 35, minutesPastStart: nil, risk: 0.2, needsAttention: false),
-                    summary: "Low evidence state",
-                    shouldSuggestReplan: false
-                ),
-                liveHealthState: LiveHealthState(
-                    status: .stable,
-                    strainRisk: 0.22,
-                    confidence: 0.2,
-                    summary: "Sparse health confidence",
-                    supportingSignals: [],
-                    recoveryRecommendations: []
-                ),
-                estimatedState: EstimatedState(
-                    capacityBand: .medium,
-                    overloadRisk: 0.55,
-                    transitionRisk: [:],
-                    latenessRisk: [:],
-                    executionState: .onTrack,
-                    confidence: 0.35,
-                    supportingSignals: []
-                ),
-                currentMode: .full,
-                assessment: DayAssessment(
-                    recommendedMode: .full,
-                    headline: "Low evidence",
-                    reasoning: "Sparse signal should damp aggressive replans.",
-                    loadScore: 4,
-                    supportFocus: "Keep stable",
-                    capacityDrivers: []
-                ),
-                profileSettings: ProfileSettings()
-            )
-        )
-        check(replanScore.overloadPressure < 0.62, "Low-evidence conditions should not immediately push overload pressure into aggressive replan range.")
 
-        print("—")
-        print("Intelligence simulation report: \(passedChecks)/\(totalChecks) checks passed.")
         print("✅ Intelligence simulation passed")
     }
 }

@@ -116,6 +116,11 @@ struct TodayView: View {
             }
             .background(AppTheme.Colors.canvas.ignoresSafeArea())
             .navigationTitle("Today")
+            .onAppear {
+                if visualSupportMode == .lowerStimulation {
+                    dayVisualStyle = .timeline
+                }
+            }
         }
     }
 
@@ -176,7 +181,11 @@ struct TodayView: View {
     }
 
     private var shouldShowCommentary: Bool {
-        false
+        adaptationSummary != nil
+        || !trimmedAdaptationReasons.isEmpty
+        || personalizedBaselineSummary != nil
+        || featuredInsight != nil
+        || !capacityDriverHighlights.isEmpty
     }
 
     private var modePicker: some View {
@@ -271,6 +280,8 @@ struct TodayView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 180)
+                    .disabled(visualSupportMode == .lowerStimulation)
+                    .opacity(visualSupportMode == .lowerStimulation ? 0.55 : 1)
                 }
 
                 if dayVisualStyle == .timeline {
@@ -351,19 +362,21 @@ struct TodayView: View {
 
     private var supportContextSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            DisclosureGroup(isExpanded: $isReasoningExpanded) {
-                capacityExplanationCard
-                    .padding(.top, 8)
-            } label: {
-                Text("Why Today Looks This Way")
-                    .font(AppTheme.Typography.sectionTitle)
+            if visualSupportMode != .lowerStimulation {
+                DisclosureGroup(isExpanded: $isReasoningExpanded) {
+                    capacityExplanationCard
+                        .padding(.top, 8)
+                } label: {
+                    Text("Why Today Looks This Way")
+                        .font(AppTheme.Typography.sectionTitle)
+                }
+                .padding(16)
+                .background(AppTheme.Colors.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(AppTheme.Colors.primaryMuted.opacity(0.35), lineWidth: 1)
+                )
             }
-            .padding(16)
-            .background(AppTheme.Colors.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(AppTheme.Colors.primaryMuted.opacity(0.35), lineWidth: 1)
-            )
 
             DisclosureGroup(isExpanded: $isContextExpanded) {
                 contextSignalsCard
@@ -389,7 +402,8 @@ struct TodayView: View {
                 Text(adaptationSummary ?? "")
                     .font(AppTheme.Typography.supporting)
                     .foregroundStyle(AppTheme.Colors.secondaryText)
-                ForEach(adaptationReasons, id: \.self) { reason in
+                    .lineLimit(2)
+                ForEach(trimmedAdaptationReasons, id: \.self) { reason in
                     HStack(alignment: .top, spacing: 8) {
                         Circle()
                             .fill(AppTheme.Colors.primaryMuted)
@@ -399,6 +413,16 @@ struct TodayView: View {
                             .font(AppTheme.Typography.caption)
                             .foregroundStyle(AppTheme.Colors.secondaryText)
                     }
+                }
+                if let adaptationNextStepText {
+                    Divider()
+                    Text("Next step")
+                        .font(AppTheme.Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.secondaryText)
+                    Text(adaptationNextStepText)
+                        .font(AppTheme.Typography.caption)
+                        .foregroundStyle(AppTheme.Colors.secondaryText)
+                        .lineLimit(2)
                 }
             }
         }
@@ -477,11 +501,23 @@ struct TodayView: View {
 
                 if let suggestedReplan {
                     Divider()
+                    Text("Reason: \(suggestedReplan.reason.title)")
+                        .font(AppTheme.Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.primary)
                     Text(suggestedReplan.title)
                         .font(AppTheme.Typography.cardTitle)
                     Text(suggestedReplan.summary)
                         .font(AppTheme.Typography.caption)
                         .foregroundStyle(AppTheme.Colors.secondaryText)
+                    if !suggestedReplan.adjustments.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(suggestedReplan.adjustments.prefix(2)), id: \.self) { adjustment in
+                                Text("• \(adjustment.title)")
+                                    .font(AppTheme.Typography.caption)
+                                    .foregroundStyle(AppTheme.Colors.secondaryText)
+                            }
+                        }
+                    }
                     Button(pdaAwareSupport ? "Try \(suggestedReplan.recommendedMode.title)" : "Apply \(suggestedReplan.recommendedMode.title) Support") {
                         onApplySuggestedReplan(suggestedReplan.recommendedMode)
                     }
@@ -504,7 +540,7 @@ struct TodayView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(capacityDrivers, id: \.self) { driver in
+                ForEach(capacityDriverHighlights, id: \.self) { driver in
                     HStack(alignment: .top, spacing: 10) {
                         Circle()
                             .fill(AppTheme.Colors.primary)
@@ -549,6 +585,7 @@ struct TodayView: View {
                 Text(personalizedBaselineSummary ?? "")
                     .font(AppTheme.Typography.supporting)
                     .foregroundStyle(AppTheme.Colors.secondaryText)
+                    .lineLimit(visualSupportMode == .lowerStimulation ? 2 : 3)
             }
         }
     }
@@ -563,11 +600,43 @@ struct TodayView: View {
                 Text(featuredInsight?.summary ?? "")
                     .font(AppTheme.Typography.supporting)
                     .foregroundStyle(AppTheme.Colors.secondaryText)
+                    .lineLimit(2)
                 Text(featuredInsight?.supportingDetail ?? "")
                     .font(AppTheme.Typography.caption)
                     .foregroundStyle(AppTheme.Colors.secondaryText)
+                    .lineLimit(2)
             }
         }
+    }
+
+    private var trimmedAdaptationReasons: [String] {
+        let limit = visualSupportMode == .lowerStimulation ? 1 : 2
+        return uniqueNonEmpty(adaptationReasons).prefix(limit).map { $0 }
+    }
+
+    private var capacityDriverHighlights: [String] {
+        let limit = visualSupportMode == .lowerStimulation ? 2 : 3
+        return uniqueNonEmpty(capacityDrivers).prefix(limit).map { $0 }
+    }
+
+    private var adaptationNextStepText: String? {
+        if let suggestedReplan {
+            return suggestedReplan.reason.recommendation
+        }
+        return liveExecutionSignals.first?.supportText
+    }
+
+    private func uniqueNonEmpty(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var unique: [String] = []
+        for value in values {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if seen.insert(trimmed).inserted {
+                unique.append(trimmed)
+            }
+        }
+        return unique
     }
 
     private var currentAnchorCard: some View {

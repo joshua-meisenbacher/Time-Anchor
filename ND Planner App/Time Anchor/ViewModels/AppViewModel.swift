@@ -46,6 +46,34 @@ struct PlannerAgendaItem: Identifiable, Hashable {
     var endMinute: Int { startMinute + durationMinutes }
 }
 
+struct IntelligenceFeatureFlags: Hashable, Codable {
+    var adaptiveReminderEnabled: Bool = true
+    var adaptiveReplanEnabled: Bool = true
+    var dataQualityGatingEnabled: Bool = true
+    var decisionTelemetryEnabled: Bool = true
+}
+
+struct AdaptiveDecisionTelemetry: Identifiable, Hashable, Codable {
+    enum Kind: String, Hashable, Codable {
+        case reminder
+        case replan
+    }
+
+    let id: UUID
+    let timestamp: Date
+    let kind: Kind
+    let title: String
+    let detail: String
+
+    init(id: UUID = UUID(), timestamp: Date = Date(), kind: Kind, title: String, detail: String) {
+        self.id = id
+        self.timestamp = timestamp
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+    }
+}
+
 @MainActor
 final class AppStore: ObservableObject {
     private static let profilesStorageKey = "TimeAnchor.userProfiles"
@@ -64,6 +92,8 @@ final class AppStore: ObservableObject {
     let liveExecutionMonitor: LiveExecutionMonitor
     let adaptiveReplanEngine: AdaptiveReplanEngine
     let insightsEngine: InsightsEngine
+    let replayEvaluator: IntelligenceReplayEvaluator
+    let dataQualityChecker: IntelligenceDataQualityChecking
     let healthService: AppleHealthService
     let calendarService: AppleCalendarService
     let googleCalendarService: GoogleCalendarService
@@ -97,6 +127,10 @@ final class AppStore: ObservableObject {
     @Published private(set) var liveExecutionState: LiveExecutionState
     @Published private(set) var adaptiveReplanSuggestion: ReplanSuggestion?
     @Published private(set) var insights: [InsightCard]
+    @Published private(set) var intelligenceReplaySummary: IntelligenceReplaySummary
+    @Published private(set) var intelligenceDataQuality: IntelligenceDataQualityReport
+    @Published var intelligenceFeatureFlags: IntelligenceFeatureFlags
+    @Published private(set) var adaptiveDecisionTelemetry: [AdaptiveDecisionTelemetry]
 
     @Published var dailyState: DailyState
     @Published var plans: [PlanVersion]
@@ -111,6 +145,7 @@ final class AppStore: ObservableObject {
     private var lastRoutineCueDeliveryByStepID: [UUID: Date] = [:]
     private var routineCueMissLoggedForStepIDs: Set<UUID> = []
     private var routinePauseStartedAt: Date?
+    private var lastReplanPromptAt: Date?
     private let sensoryCueController = SensoryCueController()
     private let notificationCenter = UNUserNotificationCenter.current()
 
@@ -119,13 +154,15 @@ final class AppStore: ObservableObject {
         capacityEngine: CapacityEngine = CapacityEngine(),
         guidanceEngine: GuidanceEngine = GuidanceEngine(),
         stateEstimator: StateEstimator = HeuristicStateEstimator(),
-        outcomeLogger: OutcomeLogger = InMemoryOutcomeLogger(),
+        outcomeLogger: OutcomeLogger = PersistentOutcomeLogger(),
         reminderOrchestrator: ReminderOrchestrator = AdaptiveReminderOrchestrator(),
         adaptiveProfileStore: AdaptiveProfileStore = BaselineAdaptiveProfileStore(),
         healthSupportEvaluator: HealthSupportEvaluator = HeuristicHealthSupportEvaluator(),
         liveExecutionMonitor: LiveExecutionMonitor = HeuristicLiveExecutionMonitor(),
         adaptiveReplanEngine: AdaptiveReplanEngine = HeuristicAdaptiveReplanEngine(),
         insightsEngine: InsightsEngine = HeuristicInsightsEngine(),
+        replayEvaluator: IntelligenceReplayEvaluator = HeuristicIntelligenceReplayEvaluator(),
+        dataQualityChecker: IntelligenceDataQualityChecking = HeuristicIntelligenceDataQualityChecker(),
         healthService: AppleHealthService = AppleHealthService(),
         calendarService: AppleCalendarService = AppleCalendarService(),
         googleCalendarService: GoogleCalendarService = GoogleCalendarService(),
@@ -150,6 +187,8 @@ final class AppStore: ObservableObject {
         self.liveExecutionMonitor = liveExecutionMonitor
         self.adaptiveReplanEngine = adaptiveReplanEngine
         self.insightsEngine = insightsEngine
+        self.replayEvaluator = replayEvaluator
+        self.dataQualityChecker = dataQualityChecker
         self.healthService = healthService
         self.calendarService = calendarService
         self.googleCalendarService = googleCalendarService
@@ -235,6 +274,11 @@ final class AppStore: ObservableObject {
         liveExecutionState = .stable
         adaptiveReplanSuggestion = nil
         insights = []
+        intelligenceReplaySummary = .empty
+        intelligenceDataQuality = .empty
+        intelligenceFeatureFlags = IntelligenceFeatureFlags()
+        adaptiveDecisionTelemetry = []
+        lastReplanPromptAt = nil
         let initialEstimatedState = stateEstimator.estimate(
             context: initialContext,
             anchors: resolvedAnchors,
@@ -258,6 +302,12 @@ final class AppStore: ObservableObject {
         let adjustedInitialEstimatedState = Self.applyingHealthInfluence(to: initialEstimatedState, with: initialLiveHealthState)
         liveHealthState = initialLiveHealthState
         estimatedState = adjustedInitialEstimatedState
+        intelligenceReplaySummary = replayEvaluator.evaluate(outcomes: selectedProfile.outcomes)
+        intelligenceDataQuality = dataQualityChecker.assess(
+            outcomes: selectedProfile.outcomes,
+            healthSnapshots: selectedProfile.healthSnapshots,
+            asOf: Date()
+        )
         let generatedPlans = planningEngine.generatePlans(
             for: initialContext,
             anchors: resolvedAnchors,
@@ -659,6 +709,10 @@ final class AppStore: ObservableObject {
             return "Biasing support toward gentler handoffs because transitions have been the most common friction point."
         }
 
+        if let preferredLeadTime = baselines.preferredLeadTimeMinutes {
+            return "Adapting reminder timing toward your recent response pattern (about \(Int(preferredLeadTime.rounded())) minutes of runway)."
+        }
+
         if liveHealthState.status == .overwhelmed {
             return "Lowering demands because live health signals suggest overwhelm is likely right now."
         }
@@ -713,6 +767,14 @@ final class AppStore: ObservableObject {
 
         if baselines.transitionMissRate >= 0.2 {
             details.append("Transition miss rate is about \(Int((baselines.transitionMissRate * 100).rounded()))% lately.")
+        }
+
+        if let weekdayDelay = baselines.weekdayTypicalCueResponseDelaySeconds, let weekendDelay = baselines.weekendTypicalCueResponseDelaySeconds {
+            details.append("Cue response is about \(Int(weekdayDelay.rounded()))s on weekdays vs \(Int(weekendDelay.rounded()))s on weekends.")
+        }
+
+        if let noReminderStartHour = baselines.noReminderStartHour, let noReminderEndHour = baselines.noReminderEndHour {
+            details.append("Quiet support window inferred around \(noReminderStartHour):00-\(noReminderEndHour):00 based on overstimulation feedback.")
         }
 
         if liveHealthState.status != .stable {
@@ -800,6 +862,12 @@ final class AppStore: ObservableObject {
         }
         if let typicalLateStartMinutes = baselines.typicalLateStartMinutes {
             parts.append("Typical late start \(Int(typicalLateStartMinutes.rounded()))m")
+        }
+        if let preferredLeadTimeMinutes = baselines.preferredLeadTimeMinutes {
+            parts.append("Preferred cue lead \(Int(preferredLeadTimeMinutes.rounded()))m")
+        }
+        if let preferredRepeatIntervalMinutes = baselines.preferredRepeatIntervalMinutes {
+            parts.append("Preferred repeat \(Int(preferredRepeatIntervalMinutes.rounded()))m")
         }
         if baselines.rebuildsPerDay >= 1 {
             parts.append(String(format: "Rebuild tendency %.1f/day", baselines.rebuildsPerDay))
@@ -1300,6 +1368,7 @@ final class AppStore: ObservableObject {
         todayStore.selectedMode = mode
         replanStore.lastAppliedMode = mode
         adaptiveReplanSuggestion = nil
+        lastReplanPromptAt = Date()
         let response = CueResponse(
             taskID: todayStore.currentTask?.id,
             scheduleBlockID: todayStore.currentBlock?.id,
@@ -2166,11 +2235,13 @@ final class AppStore: ObservableObject {
 
     private func refreshLiveExecutionState() {
         syncExecutionWithCurrentTime()
+        let profileOutcomes = selectedUserProfile?.outcomes ?? []
+        let healthSnapshots = selectedUserProfile?.healthSnapshots ?? []
         let baselines = currentPersonalizedBaselines
         liveHealthState = healthSupportEvaluator.evaluate(
             context: dayContext,
             baselines: baselines,
-            recentOutcomes: selectedUserProfile?.outcomes ?? []
+            recentOutcomes: profileOutcomes
         )
         liveExecutionState = liveExecutionMonitor.evaluate(
             now: Date(),
@@ -2178,26 +2249,51 @@ final class AppStore: ObservableObject {
             currentTask: todayStore.currentTask,
             activeTaskStartedAt: activeTaskStartedAt,
             currentDayOutcome: currentDayOutcome,
-            recentOutcomes: selectedUserProfile?.outcomes ?? [],
+            recentOutcomes: profileOutcomes,
             routinePauseStartedAt: routinePauseStartedAt,
             estimatedState: estimatedState
         )
-        adaptiveReplanSuggestion = adaptiveReplanEngine.suggest(
-            liveExecutionState: liveExecutionState,
-            liveHealthState: liveHealthState,
-            estimatedState: estimatedState,
-            currentMode: selectedMode,
-            assessment: assessment
-        )
+        if intelligenceFeatureFlags.adaptiveReplanEnabled {
+            adaptiveReplanSuggestion = adaptiveReplanEngine.suggest(
+                liveExecutionState: liveExecutionState,
+                liveHealthState: liveHealthState,
+                estimatedState: estimatedState,
+                currentMode: selectedMode,
+                assessment: assessment,
+                profileSettings: profileSettings
+            )
+        } else {
+            adaptiveReplanSuggestion = nil
+        }
         insights = insightsEngine.generateInsights(
-            outcomes: selectedUserProfile?.outcomes ?? [],
+            outcomes: profileOutcomes,
             baselines: baselines,
             estimatedState: estimatedState,
             liveHealthState: liveHealthState
         )
-        if let suggestion = adaptiveReplanSuggestion, suggestion.shouldPrompt {
-            replanStore.selectedReason = suggestion.reason
+        intelligenceReplaySummary = replayEvaluator.evaluate(outcomes: profileOutcomes)
+        intelligenceDataQuality = dataQualityChecker.assess(
+            outcomes: profileOutcomes,
+            healthSnapshots: healthSnapshots,
+            asOf: Date()
+        )
+        adaptiveReplanSuggestion = gatedReplanSuggestion(adaptiveReplanSuggestion)
+        if let adaptiveReplanSuggestion {
+            appendTelemetry(
+                kind: .replan,
+                title: adaptiveReplanSuggestion.title,
+                detail: "Reason: \(adaptiveReplanSuggestion.reason.title) • Mode: \(adaptiveReplanSuggestion.recommendedMode.title)"
+            )
         }
+        if let suggestion = adaptiveReplanSuggestion, suggestion.shouldPrompt, shouldPromptReplan(now: Date()) {
+            replanStore.selectedReason = suggestion.reason
+            lastReplanPromptAt = Date()
+        }
+    }
+
+    private func shouldPromptReplan(now: Date) -> Bool {
+        guard let lastReplanPromptAt else { return true }
+        return now.timeIntervalSince(lastReplanPromptAt) >= 20 * 60
     }
 
     private func stopTaskTimer() {
@@ -2884,14 +2980,88 @@ final class AppStore: ObservableObject {
     }
 
     private func reminderPlan(for task: Task, dailyState: DailyState) -> ReminderPlan {
-        reminderOrchestrator.reminderPlan(
+        guard intelligenceFeatureFlags.adaptiveReminderEnabled else {
+            let fallback = conservativeReminderPlan(for: task, profile: dailyState.reminderProfile)
+            appendTelemetry(kind: .reminder, title: "Reminder defaults applied", detail: "Adaptive reminders disabled by feature flag.")
+            return fallback
+        }
+        let computedPlan = reminderOrchestrator.reminderPlan(
             for: task,
+            contextDate: dayContext.date,
             dailyState: dailyState,
             profileSettings: profileSettings,
             estimatedState: estimatedState,
             recentOutcomes: selectedUserProfile?.outcomes ?? [],
             baselines: currentPersonalizedBaselines
         )
+        guard !intelligenceFeatureFlags.dataQualityGatingEnabled || intelligenceDataQuality.hasSufficientSignalCoverage else {
+            let fallback = conservativeReminderPlan(for: task, profile: dailyState.reminderProfile)
+            appendTelemetry(kind: .reminder, title: "Reminder fallback", detail: "Insufficient signal coverage, using conservative defaults.")
+            return fallback
+        }
+        appendTelemetry(kind: .reminder, title: "Adaptive reminder plan", detail: computedPlan.cadenceSummary)
+        return computedPlan
+    }
+
+    private func conservativeReminderPlan(for task: Task, profile: ReminderProfile) -> ReminderPlan {
+        switch profile {
+        case .balanced:
+            return ReminderPlan(
+                profile: .balanced,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 8),
+                repeatIntervalMinutes: 12,
+                maxRepeats: 2,
+                tone: "Clear and supportive",
+                escalationRule: "Using conservative defaults until enough data quality signal is available.",
+                sampleCopy: "Your next task is ready when you are. Start with one small step: \(task.title)."
+            )
+        case .repetitiveSupport:
+            return ReminderPlan(
+                profile: .repetitiveSupport,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 12),
+                repeatIntervalMinutes: 7,
+                maxRepeats: 3,
+                tone: "Brief, repeatable, momentum-focused",
+                escalationRule: "Using conservative defaults until enough data quality signal is available.",
+                sampleCopy: "Time Anchor check-in: \(task.title) is next. Open it and start the first step now."
+            )
+        case .gentleSupport:
+            return ReminderPlan(
+                profile: .gentleSupport,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 15),
+                repeatIntervalMinutes: 15,
+                maxRepeats: 2,
+                tone: "Low-pressure and invitational",
+                escalationRule: "Using conservative defaults until enough data quality signal is available.",
+                sampleCopy: "A gentle reminder: \(task.title) is coming up. You can prepare when it feels doable."
+            )
+        }
+    }
+
+    private func gatedReplanSuggestion(_ suggestion: ReplanSuggestion?) -> ReplanSuggestion? {
+        guard let suggestion else { return nil }
+        guard intelligenceFeatureFlags.dataQualityGatingEnabled,
+              !intelligenceDataQuality.hasSufficientSignalCoverage,
+              suggestion.shouldPrompt else { return suggestion }
+        return ReplanSuggestion(
+            reason: suggestion.reason,
+            recommendedMode: suggestion.recommendedMode,
+            title: suggestion.title,
+            summary: suggestion.summary,
+            adjustments: suggestion.adjustments,
+            shouldPrompt: false
+        )
+    }
+
+    private func appendTelemetry(kind: AdaptiveDecisionTelemetry.Kind, title: String, detail: String) {
+        guard intelligenceFeatureFlags.decisionTelemetryEnabled else { return }
+        adaptiveDecisionTelemetry.insert(
+            AdaptiveDecisionTelemetry(kind: kind, title: title, detail: detail),
+            at: 0
+        )
+        if adaptiveDecisionTelemetry.count > 40 {
+            adaptiveDecisionTelemetry.removeLast(adaptiveDecisionTelemetry.count - 40)
+        }
     }
 }
 
@@ -4123,41 +4293,6 @@ final class AppleHealthService {
     private static var authorizationRequested: Bool {
         get { UserDefaults.standard.bool(forKey: authorizationRequestedKey) }
         set { UserDefaults.standard.set(newValue, forKey: authorizationRequestedKey) }
-    }
-}
-
-enum ReplanReason: String, CaseIterable, Identifiable, Hashable, Codable {
-    case overloaded
-    case stuck
-    case transition
-    case sensory
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .overloaded:
-            return "Too much at once"
-        case .stuck:
-            return "Hard to start"
-        case .transition:
-            return "Trouble switching"
-        case .sensory:
-            return "Sensory load is high"
-        }
-    }
-
-    var recommendation: String {
-        switch self {
-        case .overloaded:
-            return "Shift to a reduced or minimum day and protect only the essentials."
-        case .stuck:
-            return "Shrink the first task and stay with one anchor until momentum returns."
-        case .transition:
-            return "Use a softer handoff and make the next anchor extremely explicit."
-        case .sensory:
-            return "Lower stimulation, reduce transitions, and preserve recovery."
-        }
     }
 }
 

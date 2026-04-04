@@ -46,6 +46,34 @@ struct PlannerAgendaItem: Identifiable, Hashable {
     var endMinute: Int { startMinute + durationMinutes }
 }
 
+struct IntelligenceFeatureFlags: Hashable, Codable {
+    var adaptiveReminderEnabled: Bool = true
+    var adaptiveReplanEnabled: Bool = true
+    var dataQualityGatingEnabled: Bool = true
+    var decisionTelemetryEnabled: Bool = true
+}
+
+struct AdaptiveDecisionTelemetry: Identifiable, Hashable, Codable {
+    enum Kind: String, Hashable, Codable {
+        case reminder
+        case replan
+    }
+
+    let id: UUID
+    let timestamp: Date
+    let kind: Kind
+    let title: String
+    let detail: String
+
+    init(id: UUID = UUID(), timestamp: Date = Date(), kind: Kind, title: String, detail: String) {
+        self.id = id
+        self.timestamp = timestamp
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+    }
+}
+
 @MainActor
 final class AppStore: ObservableObject {
     private static let profilesStorageKey = "TimeAnchor.userProfiles"
@@ -2936,7 +2964,12 @@ final class AppStore: ObservableObject {
     }
 
     private func reminderPlan(for task: Task, dailyState: DailyState) -> ReminderPlan {
-        reminderOrchestrator.reminderPlan(
+        guard intelligenceFeatureFlags.adaptiveReminderEnabled else {
+            let fallback = conservativeReminderPlan(for: task, profile: dailyState.reminderProfile)
+            appendTelemetry(kind: .reminder, title: "Reminder defaults applied", detail: "Adaptive reminders disabled by feature flag.")
+            return fallback
+        }
+        let computedPlan = reminderOrchestrator.reminderPlan(
             for: task,
             contextDate: dayContext.date,
             dailyState: dailyState,
@@ -2945,6 +2978,74 @@ final class AppStore: ObservableObject {
             recentOutcomes: selectedUserProfile?.outcomes ?? [],
             baselines: currentPersonalizedBaselines
         )
+        guard !intelligenceFeatureFlags.dataQualityGatingEnabled || intelligenceDataQuality.hasSufficientSignalCoverage else {
+            let fallback = conservativeReminderPlan(for: task, profile: dailyState.reminderProfile)
+            appendTelemetry(kind: .reminder, title: "Reminder fallback", detail: "Insufficient signal coverage, using conservative defaults.")
+            return fallback
+        }
+        appendTelemetry(kind: .reminder, title: "Adaptive reminder plan", detail: computedPlan.cadenceSummary)
+        return computedPlan
+    }
+
+    private func conservativeReminderPlan(for task: Task, profile: ReminderProfile) -> ReminderPlan {
+        switch profile {
+        case .balanced:
+            return ReminderPlan(
+                profile: .balanced,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 8),
+                repeatIntervalMinutes: 12,
+                maxRepeats: 2,
+                tone: "Clear and supportive",
+                escalationRule: "Using conservative defaults until enough data quality signal is available.",
+                sampleCopy: "Your next task is ready when you are. Start with one small step: \(task.title)."
+            )
+        case .repetitiveSupport:
+            return ReminderPlan(
+                profile: .repetitiveSupport,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 12),
+                repeatIntervalMinutes: 7,
+                maxRepeats: 3,
+                tone: "Brief, repeatable, momentum-focused",
+                escalationRule: "Using conservative defaults until enough data quality signal is available.",
+                sampleCopy: "Time Anchor check-in: \(task.title) is next. Open it and start the first step now."
+            )
+        case .gentleSupport:
+            return ReminderPlan(
+                profile: .gentleSupport,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 15),
+                repeatIntervalMinutes: 15,
+                maxRepeats: 2,
+                tone: "Low-pressure and invitational",
+                escalationRule: "Using conservative defaults until enough data quality signal is available.",
+                sampleCopy: "A gentle reminder: \(task.title) is coming up. You can prepare when it feels doable."
+            )
+        }
+    }
+
+    private func gatedReplanSuggestion(_ suggestion: ReplanSuggestion?) -> ReplanSuggestion? {
+        guard let suggestion else { return nil }
+        guard intelligenceFeatureFlags.dataQualityGatingEnabled,
+              !intelligenceDataQuality.hasSufficientSignalCoverage,
+              suggestion.shouldPrompt else { return suggestion }
+        return ReplanSuggestion(
+            reason: suggestion.reason,
+            recommendedMode: suggestion.recommendedMode,
+            title: suggestion.title,
+            summary: suggestion.summary,
+            adjustments: suggestion.adjustments,
+            shouldPrompt: false
+        )
+    }
+
+    private func appendTelemetry(kind: AdaptiveDecisionTelemetry.Kind, title: String, detail: String) {
+        guard intelligenceFeatureFlags.decisionTelemetryEnabled else { return }
+        adaptiveDecisionTelemetry.insert(
+            AdaptiveDecisionTelemetry(kind: kind, title: title, detail: detail),
+            at: 0
+        )
+        if adaptiveDecisionTelemetry.count > 40 {
+            adaptiveDecisionTelemetry.removeLast(adaptiveDecisionTelemetry.count - 40)
+        }
     }
 }
 

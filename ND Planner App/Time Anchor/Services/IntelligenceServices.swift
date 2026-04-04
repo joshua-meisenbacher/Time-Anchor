@@ -345,6 +345,9 @@ struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
         baselines: PersonalizedBaselines
     ) -> ReminderPlan {
         let outcomeWindow = Array(recentOutcomes.suffix(5))
+        if outcomeWindow.isEmpty {
+            return coldStartReminderPlan(for: task, dailyState: dailyState, profileSettings: profileSettings)
+        }
         let rebuildPressure = outcomeWindow.reduce(0) { $0 + $1.rebuildDayCount }
         let missedTransitions = outcomeWindow.reduce(0) { $0 + $1.missedTransitionBlockIDs.count }
         let dismissedCueCount = outcomeWindow
@@ -446,6 +449,153 @@ struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
                     : "A gentle reminder: \(task.title) is coming up. You can prepare when it feels doable."
             )
         }
+    }
+
+    private func coldStartReminderPlan(for task: Task, dailyState: DailyState, profileSettings: ProfileSettings) -> ReminderPlan {
+        switch dailyState.reminderProfile {
+        case .balanced:
+            return ReminderPlan(
+                profile: .balanced,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 8),
+                repeatIntervalMinutes: 12,
+                maxRepeats: 2,
+                tone: "Clear and supportive",
+                escalationRule: "Starting from stable defaults while the app learns how reminders land for this profile.",
+                sampleCopy: "Your next task is ready when you are. Start with one small step: \(task.title)."
+            )
+        case .repetitiveSupport:
+            return ReminderPlan(
+                profile: .repetitiveSupport,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 12),
+                repeatIntervalMinutes: 6,
+                maxRepeats: 3,
+                tone: "Brief, repeatable, momentum-focused",
+                escalationRule: "Starting from stronger repeat defaults and tuning from your next few cue responses.",
+                sampleCopy: "Time Anchor check-in: \(task.title) is next. Open it and start the first step now."
+            )
+        case .gentleSupport:
+            return ReminderPlan(
+                profile: .gentleSupport,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 15),
+                repeatIntervalMinutes: 15,
+                maxRepeats: 2,
+                tone: "Low-pressure and invitational",
+                escalationRule: "Starting from gentle defaults and waiting for enough signal before tightening prompts.",
+                sampleCopy: "A gentle reminder: \(task.title) is coming up. You can prepare when it feels doable."
+            )
+        }
+    }
+}
+
+struct ReminderDecisionFeatures {
+    let contextDate: Date
+    let dailyState: DailyState
+    let estimatedState: EstimatedState
+    let profileSettings: ProfileSettings
+    let baselines: PersonalizedBaselines
+    let behaviorPressure: Bool
+    let overstimulationRisk: Bool
+    let tooLateCount: Int
+    let tooEarlyCount: Int
+    let tooIntenseCount: Int
+    let alreadyMovingCount: Int
+}
+
+struct ReminderDecisionScore {
+    let leadTimeAdjustmentMinutes: Int
+    let repeatIntervalAdjustmentMinutes: Int
+    let maxRepeatsAdjustment: Int
+}
+
+protocol ReminderDecisionScoring {
+    func score(features: ReminderDecisionFeatures) -> ReminderDecisionScore
+}
+
+struct HeuristicReminderDecisionScorer: ReminderDecisionScoring {
+    private enum Tuning {
+        static let minLeadAdjustment = -4
+        static let maxLeadAdjustment = 8
+        static let minRepeatAdjustment = -2
+        static let maxRepeatAdjustment = 6
+        static let minRepeatsAdjustment = -2
+        static let maxRepeatsAdjustment = 2
+    }
+
+    func score(features: ReminderDecisionFeatures) -> ReminderDecisionScore {
+        var leadAdjustment = 0
+        var repeatAdjustment = 0
+        var repeatsAdjustment = 0
+        let hour = Calendar.current.component(.hour, from: features.contextDate)
+
+        if features.behaviorPressure || features.tooLateCount >= 2 {
+            leadAdjustment += 3
+        }
+        if features.tooEarlyCount >= 2 {
+            leadAdjustment -= 2
+        }
+        if features.baselines.cueOverstimulationRate >= 0.25 || features.overstimulationRisk {
+            repeatAdjustment += 3
+            repeatsAdjustment -= 1
+        }
+        if features.baselines.cueAlreadyMovingRate >= 0.3 || features.alreadyMovingCount >= 2 {
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        }
+        if let quietStart = features.baselines.noReminderStartHour,
+           let quietEnd = features.baselines.noReminderEndHour,
+           Self.isInQuietHours(hour: hour, startHour: quietStart, endHour: quietEnd) {
+            repeatAdjustment += 4
+            repeatsAdjustment -= 1
+        }
+        switch features.profileSettings.neurotype {
+        case .adhd:
+            repeatAdjustment -= 1
+            repeatsAdjustment += 1
+        case .asd:
+            leadAdjustment += 2
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        case .audhd:
+            leadAdjustment += 1
+            repeatAdjustment += 1
+        case .neurotypical, .other:
+            break
+        }
+        switch features.profileSettings.userRole {
+        case .selfPlanner:
+            break
+        case .caregiver:
+            leadAdjustment += 2
+            repeatAdjustment += 1
+        case .familyCoordinator:
+            leadAdjustment += 2
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        }
+        let hasSparseSignal = features.baselines.typicalCueResponseDelaySeconds == nil
+            && features.baselines.preferredLeadTimeMinutes == nil
+            && features.baselines.preferredRepeatIntervalMinutes == nil
+        if hasSparseSignal {
+            repeatAdjustment = max(repeatAdjustment, 0)
+            repeatsAdjustment = min(repeatsAdjustment, 0)
+        }
+        leadAdjustment = max(Tuning.minLeadAdjustment, min(Tuning.maxLeadAdjustment, leadAdjustment))
+        repeatAdjustment = max(Tuning.minRepeatAdjustment, min(Tuning.maxRepeatAdjustment, repeatAdjustment))
+        repeatsAdjustment = max(Tuning.minRepeatsAdjustment, min(Tuning.maxRepeatsAdjustment, repeatsAdjustment))
+
+        return ReminderDecisionScore(
+            leadTimeAdjustmentMinutes: leadAdjustment,
+            repeatIntervalAdjustmentMinutes: repeatAdjustment,
+            maxRepeatsAdjustment: repeatsAdjustment
+        )
+    }
+
+    private static func isInQuietHours(hour: Int, startHour: Int, endHour: Int) -> Bool {
+        if startHour == endHour { return false }
+        if startHour < endHour {
+            return hour >= startHour && hour < endHour
+        }
+        return hour >= startHour || hour < endHour
     }
 }
 

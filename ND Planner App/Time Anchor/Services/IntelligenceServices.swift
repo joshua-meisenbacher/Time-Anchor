@@ -15,9 +15,27 @@ protocol OutcomeLogger {
     func outcomes() -> [DayOutcome]
 }
 
+protocol IntelligenceReplayEvaluator {
+    func evaluate(outcomes: [DayOutcome]) -> IntelligenceReplaySummary
+}
+
+protocol IntelligenceDataQualityChecking {
+    func assess(outcomes: [DayOutcome], healthSnapshots: [DailyHealthSnapshot], asOf date: Date) -> IntelligenceDataQualityReport
+}
+
+enum AdaptiveHeuristicThresholds {
+    static let replanCriticalOverload = 0.8
+    static let replanHighOverloadFromFullMode = 0.62
+    static let replanRebuildPressure = 0.7
+    static let replanStartFriction = 0.65
+    static let replanTransitionPressure = 0.6
+    static let replanSensoryOverload = 0.72
+}
+
 protocol ReminderOrchestrator {
     func reminderPlan(
         for task: Task,
+        contextDate: Date,
         dailyState: DailyState,
         profileSettings: ProfileSettings,
         estimatedState: EstimatedState,
@@ -57,7 +75,8 @@ protocol AdaptiveReplanEngine {
         liveHealthState: LiveHealthState,
         estimatedState: EstimatedState,
         currentMode: PlanMode,
-        assessment: DayAssessment
+        assessment: DayAssessment,
+        profileSettings: ProfileSettings
     ) -> ReplanSuggestion?
 }
 
@@ -191,9 +210,143 @@ final class InMemoryOutcomeLogger: OutcomeLogger {
     }
 }
 
+final class PersistentOutcomeLogger: OutcomeLogger {
+    private struct StorageEnvelope: Codable {
+        let schemaVersion: Int
+        let outcomes: [DayOutcome]
+    }
+
+    private static let schemaVersion = 1
+
+    private var storedOutcomes: [DayOutcome]
+    private let fileURL: URL
+    private let fileManager: FileManager
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+
+    init(
+        fileManager: FileManager = .default,
+        baseDirectory: URL? = nil,
+        filename: String = "timeanchor-outcomes.json"
+    ) {
+        self.fileManager = fileManager
+        let rootDirectory = baseDirectory ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
+        let storeDirectory = rootDirectory.appendingPathComponent("TimeAnchor", isDirectory: true)
+        self.fileURL = storeDirectory.appendingPathComponent(filename, isDirectory: false)
+        self.encoder = JSONEncoder()
+        self.decoder = JSONDecoder()
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+        self.storedOutcomes = []
+        ensureDirectoryExists(at: storeDirectory)
+        self.storedOutcomes = loadOutcomes()
+    }
+
+    func record(_ outcome: DayOutcome) {
+        let calendar = Calendar.current
+        storedOutcomes.removeAll { calendar.isDate($0.date, inSameDayAs: outcome.date) }
+        storedOutcomes.append(outcome)
+        storedOutcomes.sort { $0.date < $1.date }
+        persist()
+    }
+
+    func outcomes() -> [DayOutcome] {
+        storedOutcomes
+    }
+
+    private func ensureDirectoryExists(at directoryURL: URL) {
+        guard !fileManager.fileExists(atPath: directoryURL.path) else { return }
+        try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    }
+
+    private func loadOutcomes() -> [DayOutcome] {
+        guard fileManager.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
+              let envelope = try? decoder.decode(StorageEnvelope.self, from: data),
+              envelope.schemaVersion == Self.schemaVersion else {
+            return []
+        }
+        return envelope.outcomes.sorted { $0.date < $1.date }
+    }
+
+    private func persist() {
+        let envelope = StorageEnvelope(schemaVersion: Self.schemaVersion, outcomes: storedOutcomes)
+        guard let data = try? encoder.encode(envelope) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
+}
+
+struct HeuristicIntelligenceReplayEvaluator: IntelligenceReplayEvaluator {
+    func evaluate(outcomes: [DayOutcome]) -> IntelligenceReplaySummary {
+        let sortedOutcomes = outcomes.sorted { $0.date < $1.date }
+        guard !sortedOutcomes.isEmpty else {
+            return IntelligenceReplaySummary.empty
+        }
+
+        let totalDays = sortedOutcomes.count
+        let totalRebuilds = sortedOutcomes.reduce(0) { $0 + $1.rebuildDayCount }
+        let totalTransitionMisses = sortedOutcomes.reduce(0) { $0 + $1.missedTransitionBlockIDs.count }
+        let totalLateStarts = sortedOutcomes.flatMap { $0.lateStartMinutesByBlockID.values }
+        let averageLateStartMinutes = totalLateStarts.isEmpty
+            ? nil
+            : (Double(totalLateStarts.reduce(0, +)) / Double(totalLateStarts.count))
+        let cueResponses = sortedOutcomes.flatMap(\.cueResponses)
+        let actedOnCueCount = cueResponses.filter { $0.result == .actedOn || $0.result == .helpful }.count
+        let deliveredCueCount = cueResponses.filter { $0.result == .delivered || $0.result == .actedOn || $0.result == .helpful }.count
+        let routinePauses = sortedOutcomes.reduce(0) { $0 + $1.routinePauseCount }
+        let routineResumes = sortedOutcomes.reduce(0) { $0 + $1.routineResumeCount }
+
+        return IntelligenceReplaySummary(
+            totalDays: totalDays,
+            rebuildsPerDay: Double(totalRebuilds) / Double(totalDays),
+            transitionMissesPerDay: Double(totalTransitionMisses) / Double(totalDays),
+            averageLateStartMinutes: averageLateStartMinutes,
+            cueActedOnRate: deliveredCueCount > 0 ? Double(actedOnCueCount) / Double(deliveredCueCount) : nil,
+            routineResumeRate: routinePauses > 0 ? min(max(Double(routineResumes) / Double(routinePauses), 0), 1) : nil
+        )
+    }
+}
+
+struct HeuristicIntelligenceDataQualityChecker: IntelligenceDataQualityChecking {
+    func assess(outcomes: [DayOutcome], healthSnapshots: [DailyHealthSnapshot], asOf date: Date) -> IntelligenceDataQualityReport {
+        let calendar = Calendar.current
+        let trailingWindowDays = 14
+        let days: [Date] = (0..<trailingWindowDays).compactMap {
+            calendar.date(byAdding: .day, value: -$0, to: calendar.startOfDay(for: date))
+        }
+        let outputDays = Set(outcomes.map { calendar.startOfDay(for: $0.date) })
+        let healthDays = Set(healthSnapshots.map { calendar.startOfDay(for: $0.date) })
+
+        let missingOutcomeDays = days.filter { !outputDays.contains($0) }.count
+        let missingHealthDays = days.filter { !healthDays.contains($0) }.count
+        let cueResponsesInWindow = outcomes
+            .filter { outcome in
+                guard let diff = calendar.dateComponents([.day], from: calendar.startOfDay(for: outcome.date), to: calendar.startOfDay(for: date)).day else { return false }
+                return diff >= 0 && diff < trailingWindowDays
+            }
+            .flatMap(\.cueResponses)
+            .count
+
+        return IntelligenceDataQualityReport(
+            trailingWindowDays: trailingWindowDays,
+            missingOutcomeDays: missingOutcomeDays,
+            missingHealthSnapshotDays: missingHealthDays,
+            cueResponsesRecorded: cueResponsesInWindow,
+            hasSufficientSignalCoverage: missingOutcomeDays <= 4 && missingHealthDays <= 6
+        )
+    }
+}
+
 struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
+    private let scoring: ReminderDecisionScoring
+
+    init(scoring: ReminderDecisionScoring = HeuristicReminderDecisionScorer()) {
+        self.scoring = scoring
+    }
+
     func reminderPlan(
         for task: Task,
+        contextDate: Date,
         dailyState: DailyState,
         profileSettings: ProfileSettings,
         estimatedState: EstimatedState,
@@ -201,6 +354,9 @@ struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
         baselines: PersonalizedBaselines
     ) -> ReminderPlan {
         let outcomeWindow = Array(recentOutcomes.suffix(5))
+        if outcomeWindow.isEmpty {
+            return coldStartReminderPlan(for: task, dailyState: dailyState, profileSettings: profileSettings)
+        }
         let rebuildPressure = outcomeWindow.reduce(0) { $0 + $1.rebuildDayCount }
         let missedTransitions = outcomeWindow.reduce(0) { $0 + $1.missedTransitionBlockIDs.count }
         let dismissedCueCount = outcomeWindow
@@ -223,7 +379,8 @@ struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
         let overstimulationRisk = tooIntenseCount >= 2 || (dismissedCueCount > actedOnCueCount && dismissedCueCount >= 2)
         let baselineLeadBias = (baselines.typicalCueResponseDelaySeconds ?? 0) >= 240 ? 3 : 0
         let baselineLateStartBias = (baselines.typicalLateStartMinutes ?? 0) >= 8 ? 4 : 0
-        let transitionLead = max(profileSettings.transitionPrepMinutes, 0)
+        let preferredLeadTime = Int((baselines.preferredLeadTimeMinutes ?? Double(profileSettings.transitionPrepMinutes)).rounded())
+        let transitionLead = max(preferredLeadTime, 0)
             + baselineLeadBias
             + baselineLateStartBias
             + (tooLateCount >= 2 ? 5 : (tooEarlyCount >= 2 ? -3 : 0))
@@ -231,14 +388,31 @@ struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
         let alreadyInMotion = alreadyMovingCount >= 2
         let highBaselineRebuildPattern = baselines.rebuildsPerDay >= 1.25
         let lowRoutineRecovery = baselines.routineResumeRate < 0.6
+        let decisionScore = scoring.score(
+            features: ReminderDecisionFeatures(
+                contextDate: contextDate,
+                dailyState: dailyState,
+                estimatedState: estimatedState,
+                profileSettings: profileSettings,
+                baselines: baselines,
+                behaviorPressure: behaviorPressure,
+                overstimulationRisk: overstimulationRisk,
+                tooLateCount: tooLateCount,
+                tooEarlyCount: tooEarlyCount,
+                tooIntenseCount: tooIntenseCount,
+                alreadyMovingCount: alreadyMovingCount
+            )
+        )
 
         switch dailyState.reminderProfile {
         case .balanced:
+            let baseRepeatInterval = baselines.preferredRepeatIntervalMinutes.map { Int($0.rounded()) } ?? (behaviorPressure || highFriction || highBaselineRebuildPattern ? 8 : 12)
+            let adjustedRepeatInterval = max(5, baseRepeatInterval + decisionScore.repeatIntervalAdjustmentMinutes)
             return ReminderPlan(
                 profile: .balanced,
-                leadTimeMinutes: task.startMinute == nil ? 0 : boundedTransitionLead,
-                repeatIntervalMinutes: overstimulationRisk ? 14 : (behaviorPressure || highFriction || highBaselineRebuildPattern ? 8 : 12),
-                maxRepeats: alreadyInMotion ? 1 : (overloadRisk ? 2 : ((behaviorPressure || highFriction || lowRoutineRecovery) ? 3 : 2)),
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(0, boundedTransitionLead + decisionScore.leadTimeAdjustmentMinutes),
+                repeatIntervalMinutes: overstimulationRisk ? max(adjustedRepeatInterval, 14) : adjustedRepeatInterval,
+                maxRepeats: max(1, (alreadyInMotion ? 1 : (overloadRisk ? 2 : ((behaviorPressure || highFriction || lowRoutineRecovery) ? 3 : 2))) + decisionScore.maxRepeatsAdjustment),
                 tone: "Clear and supportive",
                 escalationRule: overstimulationRisk
                     ? "Reduce repetition because recent cues look easy to bounce off when the day feels loud."
@@ -252,11 +426,13 @@ struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
                         : "Your next task is ready when you are. Start with one small step: \(task.title).")
             )
         case .repetitiveSupport:
+            let baseRepeatInterval = baselines.preferredRepeatIntervalMinutes.map { Int($0.rounded()) } ?? (overloadRisk ? 8 : ((behaviorPressure || highBaselineRebuildPattern) ? 5 : 6))
+            let adjustedRepeatInterval = max(4, baseRepeatInterval + decisionScore.repeatIntervalAdjustmentMinutes)
             return ReminderPlan(
                 profile: .repetitiveSupport,
-                leadTimeMinutes: task.startMinute == nil ? 0 : max(boundedTransitionLead, 12),
-                repeatIntervalMinutes: overstimulationRisk ? 10 : (overloadRisk ? 8 : ((behaviorPressure || highBaselineRebuildPattern) ? 5 : 6)),
-                maxRepeats: alreadyInMotion ? 2 : (overloadRisk ? 3 : ((behaviorPressure || lowRoutineRecovery) ? 5 : 4)),
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(max(0, boundedTransitionLead + decisionScore.leadTimeAdjustmentMinutes), 12),
+                repeatIntervalMinutes: overstimulationRisk ? max(adjustedRepeatInterval, 10) : adjustedRepeatInterval,
+                maxRepeats: max(1, (alreadyInMotion ? 2 : (overloadRisk ? 3 : ((behaviorPressure || lowRoutineRecovery) ? 5 : 4))) + decisionScore.maxRepeatsAdjustment),
                 tone: "Brief, repeatable, momentum-focused",
                 escalationRule: overstimulationRisk
                     ? "Keep the prompts present but slightly farther apart because recent support looks easy to tune out."
@@ -268,11 +444,13 @@ struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
                     : "Time Anchor check-in: \(task.title) is next. Open it and start the first step now."
             )
         case .gentleSupport:
+            let baseRepeatInterval = baselines.preferredRepeatIntervalMinutes.map { Int($0.rounded()) } ?? ((behaviorPressure || highBaselineRebuildPattern) ? 12 : 15)
+            let adjustedRepeatInterval = max(8, baseRepeatInterval + max(0, decisionScore.repeatIntervalAdjustmentMinutes))
             return ReminderPlan(
                 profile: .gentleSupport,
-                leadTimeMinutes: task.startMinute == nil ? 0 : max(boundedTransitionLead, 15),
-                repeatIntervalMinutes: overloadRisk || overstimulationRisk ? nil : ((behaviorPressure || highBaselineRebuildPattern) ? 12 : 15),
-                maxRepeats: alreadyInMotion ? 1 : (overloadRisk ? 1 : ((behaviorPressure || lowRoutineRecovery) && !overstimulationRisk ? 3 : 2)),
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(max(0, boundedTransitionLead + decisionScore.leadTimeAdjustmentMinutes), 15),
+                repeatIntervalMinutes: overloadRisk || overstimulationRisk ? nil : adjustedRepeatInterval,
+                maxRepeats: max(1, (alreadyInMotion ? 1 : (overloadRisk ? 1 : ((behaviorPressure || lowRoutineRecovery) && !overstimulationRisk ? 3 : 2))) + decisionScore.maxRepeatsAdjustment),
                 tone: "Low-pressure and invitational",
                 escalationRule: "Prioritize continuity over urgency, especially when recent cues looked easy to dismiss or the day needed rebuilding.",
                 sampleCopy: behaviorPressure
@@ -281,43 +459,293 @@ struct AdaptiveReminderOrchestrator: ReminderOrchestrator {
             )
         }
     }
+
+    private func coldStartReminderPlan(for task: Task, dailyState: DailyState, profileSettings: ProfileSettings) -> ReminderPlan {
+        switch dailyState.reminderProfile {
+        case .balanced:
+            return ReminderPlan(
+                profile: .balanced,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 8),
+                repeatIntervalMinutes: 12,
+                maxRepeats: 2,
+                tone: "Clear and supportive",
+                escalationRule: "Starting from stable defaults while the app learns how reminders land for this profile.",
+                sampleCopy: "Your next task is ready when you are. Start with one small step: \(task.title)."
+            )
+        case .repetitiveSupport:
+            return ReminderPlan(
+                profile: .repetitiveSupport,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 12),
+                repeatIntervalMinutes: 6,
+                maxRepeats: 3,
+                tone: "Brief, repeatable, momentum-focused",
+                escalationRule: "Starting from stronger repeat defaults and tuning from your next few cue responses.",
+                sampleCopy: "Time Anchor check-in: \(task.title) is next. Open it and start the first step now."
+            )
+        case .gentleSupport:
+            return ReminderPlan(
+                profile: .gentleSupport,
+                leadTimeMinutes: task.startMinute == nil ? 0 : max(profileSettings.transitionPrepMinutes, 15),
+                repeatIntervalMinutes: 15,
+                maxRepeats: 2,
+                tone: "Low-pressure and invitational",
+                escalationRule: "Starting from gentle defaults and waiting for enough signal before tightening prompts.",
+                sampleCopy: "A gentle reminder: \(task.title) is coming up. You can prepare when it feels doable."
+            )
+        }
+    }
+}
+
+struct ReminderDecisionFeatures {
+    let contextDate: Date
+    let dailyState: DailyState
+    let estimatedState: EstimatedState
+    let profileSettings: ProfileSettings
+    let baselines: PersonalizedBaselines
+    let behaviorPressure: Bool
+    let overstimulationRisk: Bool
+    let tooLateCount: Int
+    let tooEarlyCount: Int
+    let tooIntenseCount: Int
+    let alreadyMovingCount: Int
+}
+
+struct ReminderDecisionScore {
+    let leadTimeAdjustmentMinutes: Int
+    let repeatIntervalAdjustmentMinutes: Int
+    let maxRepeatsAdjustment: Int
+}
+
+protocol ReminderDecisionScoring {
+    func score(features: ReminderDecisionFeatures) -> ReminderDecisionScore
+}
+
+struct HeuristicReminderDecisionScorer: ReminderDecisionScoring {
+    private enum Tuning {
+        static let minLeadAdjustment = -4
+        static let maxLeadAdjustment = 8
+        static let minRepeatAdjustment = -2
+        static let maxRepeatAdjustment = 6
+        static let minRepeatsAdjustment = -2
+        static let maxRepeatsAdjustment = 2
+    }
+
+    func score(features: ReminderDecisionFeatures) -> ReminderDecisionScore {
+        var leadAdjustment = 0
+        var repeatAdjustment = 0
+        var repeatsAdjustment = 0
+        let hour = Calendar.current.component(.hour, from: features.contextDate)
+
+        if features.behaviorPressure || features.tooLateCount >= 2 {
+            leadAdjustment += 3
+        }
+        if features.tooEarlyCount >= 2 {
+            leadAdjustment -= 2
+        }
+        if features.baselines.cueOverstimulationRate >= 0.25 || features.overstimulationRisk {
+            repeatAdjustment += 3
+            repeatsAdjustment -= 1
+        }
+        if features.baselines.cueAlreadyMovingRate >= 0.3 || features.alreadyMovingCount >= 2 {
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        }
+        if let quietStart = features.baselines.noReminderStartHour,
+           let quietEnd = features.baselines.noReminderEndHour,
+           Self.isInQuietHours(hour: hour, startHour: quietStart, endHour: quietEnd) {
+            repeatAdjustment += 4
+            repeatsAdjustment -= 1
+        }
+        switch features.profileSettings.neurotype {
+        case .adhd:
+            repeatAdjustment -= 1
+            repeatsAdjustment += 1
+        case .asd:
+            leadAdjustment += 2
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        case .audhd:
+            leadAdjustment += 1
+            repeatAdjustment += 1
+        case .neurotypical, .other:
+            break
+        }
+        switch features.profileSettings.userRole {
+        case .selfPlanner:
+            break
+        case .caregiver:
+            leadAdjustment += 2
+            repeatAdjustment += 1
+        case .familyCoordinator:
+            leadAdjustment += 2
+            repeatAdjustment += 2
+            repeatsAdjustment -= 1
+        }
+        let hasSparseSignal = features.baselines.typicalCueResponseDelaySeconds == nil
+            && features.baselines.preferredLeadTimeMinutes == nil
+            && features.baselines.preferredRepeatIntervalMinutes == nil
+        if hasSparseSignal {
+            repeatAdjustment = max(repeatAdjustment, 0)
+            repeatsAdjustment = min(repeatsAdjustment, 0)
+        }
+        leadAdjustment = max(Tuning.minLeadAdjustment, min(Tuning.maxLeadAdjustment, leadAdjustment))
+        repeatAdjustment = max(Tuning.minRepeatAdjustment, min(Tuning.maxRepeatAdjustment, repeatAdjustment))
+        repeatsAdjustment = max(Tuning.minRepeatsAdjustment, min(Tuning.maxRepeatsAdjustment, repeatsAdjustment))
+
+        return ReminderDecisionScore(
+            leadTimeAdjustmentMinutes: leadAdjustment,
+            repeatIntervalAdjustmentMinutes: repeatAdjustment,
+            maxRepeatsAdjustment: repeatsAdjustment
+        )
+    }
+
+    private static func isInQuietHours(hour: Int, startHour: Int, endHour: Int) -> Bool {
+        if startHour == endHour { return false }
+        if startHour < endHour {
+            return hour >= startHour && hour < endHour
+        }
+        return hour >= startHour || hour < endHour
+    }
 }
 
 struct BaselineAdaptiveProfileStore: AdaptiveProfileStore {
+    private let averagingStrategy: BaselineAveragingStrategy
+
+    init(averagingStrategy: BaselineAveragingStrategy = RecencyWeightedRobustAveragingStrategy()) {
+        self.averagingStrategy = averagingStrategy
+    }
+
     func baselines(for profileID: UUID, recentHealthSignals: [HealthSignals], outcomes: [DayOutcome]) -> PersonalizedBaselines {
-        let cueDelays = outcomes
-            .flatMap(\.cueResponses)
+        let sortedOutcomes = outcomes.sorted { $0.date < $1.date }
+        let cueResponses = sortedOutcomes.flatMap(\.cueResponses)
+        let cueDelays = cueResponses.compactMap(\.responseDelaySeconds).map(Double.init)
+        let weekdayCueDelays = cueResponses
+            .filter { !Calendar.current.isDateInWeekend($0.recordedAt) }
             .compactMap(\.responseDelaySeconds)
             .map(Double.init)
-        let lateStartMinutes = outcomes
+        let weekendCueDelays = cueResponses
+            .filter { Calendar.current.isDateInWeekend($0.recordedAt) }
+            .compactMap(\.responseDelaySeconds)
+            .map(Double.init)
+        let lateStartMinutes = sortedOutcomes
             .flatMap(\.lateStartMinutesByBlockID.values)
             .map(Double.init)
-        let rebuildsPerDay = average(outcomes.map { Double($0.rebuildDayCount) }) ?? 0
+        let rebuildsPerDay = averagingStrategy.average(sortedOutcomes.map { Double($0.rebuildDayCount) }) ?? 0
         let transitionAttempts = outcomes.reduce(0.0) { partial, outcome in
             partial + Double(max(outcome.missedTransitionBlockIDs.count + outcome.lateStartMinutesByBlockID.count, 1))
         }
         let transitionMisses = Double(outcomes.reduce(0) { $0 + $1.missedTransitionBlockIDs.count })
         let pauseCount = Double(outcomes.reduce(0) { $0 + $1.routinePauseCount })
         let resumeCount = Double(outcomes.reduce(0) { $0 + $1.routineResumeCount })
+        let overstimulationCount = Double(cueResponses.filter { $0.result == .overstimulating || $0.failureReason == .tooIntense }.count)
+        let alreadyMovingCount = Double(cueResponses.filter { $0.failureReason == .alreadyMoving }.count)
+        let responseCount = Double(max(cueResponses.count, 1))
+        let preferredLeadTime = preferredLeadTimeMinutes(from: cueResponses)
+        let preferredRepeatInterval = preferredRepeatIntervalMinutes(from: cueResponses)
+        let noReminderWindow = inferredNoReminderWindow(from: cueResponses)
 
         return PersonalizedBaselines(
-            typicalSleepHours: average(recentHealthSignals.compactMap(\.sleepHours)),
-            typicalHydrationLiters: average(recentHealthSignals.compactMap(\.hydrationLiters)),
-            typicalRestingHeartRate: average(recentHealthSignals.compactMap { $0.restingHeartRate.map(Double.init) }),
-            typicalHeartRateVariabilityMilliseconds: average(recentHealthSignals.compactMap(\.heartRateVariabilityMilliseconds)),
-            typicalRespiratoryRate: average(recentHealthSignals.compactMap(\.respiratoryRate)),
-            typicalCueResponseDelaySeconds: average(cueDelays),
-            typicalLateStartMinutes: average(lateStartMinutes),
+            typicalSleepHours: averagingStrategy.averageWithRecency(recentHealthSignals.compactMap(\.sleepHours)),
+            typicalHydrationLiters: averagingStrategy.averageWithRecency(recentHealthSignals.compactMap(\.hydrationLiters)),
+            typicalRestingHeartRate: averagingStrategy.averageWithRecency(recentHealthSignals.compactMap { $0.restingHeartRate.map(Double.init) }),
+            typicalHeartRateVariabilityMilliseconds: averagingStrategy.averageWithRecency(recentHealthSignals.compactMap(\.heartRateVariabilityMilliseconds)),
+            typicalRespiratoryRate: averagingStrategy.averageWithRecency(recentHealthSignals.compactMap(\.respiratoryRate)),
+            typicalCueResponseDelaySeconds: averagingStrategy.averageWithRecency(cueDelays),
+            weekdayTypicalCueResponseDelaySeconds: averagingStrategy.averageWithRecency(weekdayCueDelays),
+            weekendTypicalCueResponseDelaySeconds: averagingStrategy.averageWithRecency(weekendCueDelays),
+            typicalLateStartMinutes: averagingStrategy.averageWithRecency(lateStartMinutes),
+            preferredLeadTimeMinutes: preferredLeadTime,
+            preferredRepeatIntervalMinutes: preferredRepeatInterval,
+            noReminderStartHour: noReminderWindow.startHour,
+            noReminderEndHour: noReminderWindow.endHour,
+            cueOverstimulationRate: overstimulationCount / responseCount,
+            cueAlreadyMovingRate: alreadyMovingCount / responseCount,
             rebuildsPerDay: rebuildsPerDay,
             transitionMissRate: transitionAttempts > 0 ? (transitionMisses / transitionAttempts) : 0,
             routineResumeRate: pauseCount > 0 ? min(max(resumeCount / pauseCount, 0), 1) : 1,
-            typicalRecoveryScore: average(recentHealthSignals.compactMap { $0.recoveryScore.map(Double.init) })
+            typicalRecoveryScore: averagingStrategy.averageWithRecency(recentHealthSignals.compactMap { $0.recoveryScore.map(Double.init) })
         )
     }
 
-    private func average(_ values: [Double]) -> Double? {
+    private func preferredLeadTimeMinutes(from responses: [CueResponse]) -> Double? {
+        let tooLate = responses.filter { $0.failureReason == .tooLate }.count
+        let tooEarly = responses.filter { $0.failureReason == .tooEarly }.count
+        let base = averagingStrategy.averageWithRecency(
+            responses.compactMap(\.responseDelaySeconds).map { Double($0) / 60.0 }
+        ) ?? 10
+        if tooLate > tooEarly {
+            return min(30, base + 4)
+        }
+        if tooEarly > tooLate {
+            return max(4, base - 2)
+        }
+        return base
+    }
+
+    private func preferredRepeatIntervalMinutes(from responses: [CueResponse]) -> Double? {
+        guard !responses.isEmpty else { return nil }
+        let overstimulating = responses.filter { $0.result == .overstimulating || $0.failureReason == .tooIntense }.count
+        let alreadyMoving = responses.filter { $0.failureReason == .alreadyMoving }.count
+        let pressure = Double(overstimulating + alreadyMoving) / Double(max(responses.count, 1))
+        return pressure >= 0.25 ? 12 : 8
+    }
+
+    private func inferredNoReminderWindow(from responses: [CueResponse]) -> (startHour: Int?, endHour: Int?) {
+        let loudHours = responses
+            .filter { $0.result == .overstimulating || $0.failureReason == .tooIntense }
+            .map { Calendar.current.component(.hour, from: $0.recordedAt) }
+        guard loudHours.count >= 2 else { return (nil, nil) }
+        let eveningHits = loudHours.filter { $0 >= 20 || $0 <= 1 }.count
+        if eveningHits >= 2 {
+            return (21, 8)
+        }
+        return (nil, nil)
+    }
+}
+
+protocol BaselineAveragingStrategy {
+    func average(_ values: [Double]) -> Double?
+    func averageWithRecency(_ values: [Double]) -> Double?
+}
+
+struct MeanBaselineAveragingStrategy: BaselineAveragingStrategy {
+    func average(_ values: [Double]) -> Double? {
         guard !values.isEmpty else { return nil }
         return values.reduce(0, +) / Double(values.count)
+    }
+
+    func averageWithRecency(_ values: [Double]) -> Double? {
+        average(values)
+    }
+}
+
+struct RecencyWeightedRobustAveragingStrategy: BaselineAveragingStrategy {
+    func average(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let trimCount = min(1, sorted.count / 6)
+        let trimmed = sorted.dropFirst(trimCount).dropLast(trimCount)
+        guard !trimmed.isEmpty else { return sorted.reduce(0, +) / Double(sorted.count) }
+        return trimmed.reduce(0, +) / Double(trimmed.count)
+    }
+
+    func averageWithRecency(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let robust = average(values) ?? values.last
+        let weightedSum = values.enumerated().reduce(0.0) { partial, pair in
+            let (index, value) = pair
+            let weight = pow(1.25, Double(index))
+            return partial + (value * weight)
+        }
+        let totalWeight = values.enumerated().reduce(0.0) { partial, pair in
+            partial + pow(1.25, Double(pair.offset))
+        }
+        guard totalWeight > 0 else { return robust }
+        let recencyMean = weightedSum / totalWeight
+        if let robust {
+            return (recencyMean * 0.7) + (robust * 0.3)
+        }
+        return recencyMean
     }
 }
 
@@ -571,14 +999,31 @@ struct HeuristicLiveExecutionMonitor: LiveExecutionMonitor {
 }
 
 struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
+    private let scoring: ReplanDecisionScoring
+
+    init(scoring: ReplanDecisionScoring = HeuristicReplanDecisionScorer()) {
+        self.scoring = scoring
+    }
+
     func suggest(
         liveExecutionState: LiveExecutionState,
         liveHealthState: LiveHealthState,
         estimatedState: EstimatedState,
         currentMode: PlanMode,
-        assessment: DayAssessment
+        assessment: DayAssessment,
+        profileSettings: ProfileSettings
     ) -> ReplanSuggestion? {
-        if liveHealthState.status == .overwhelmed {
+        let features = ReplanDecisionFeatures(
+            liveExecutionState: liveExecutionState,
+            liveHealthState: liveHealthState,
+            estimatedState: estimatedState,
+            currentMode: currentMode,
+            assessment: assessment,
+            profileSettings: profileSettings
+        )
+        let score = scoring.score(features: features)
+
+        if score.overloadPressure >= AdaptiveHeuristicThresholds.replanCriticalOverload {
             return ReplanSuggestion(
                 reason: .overloaded,
                 recommendedMode: .minimum,
@@ -589,7 +1034,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
             )
         }
 
-        if liveHealthState.status == .strained, currentMode == .full {
+        if score.overloadPressure >= AdaptiveHeuristicThresholds.replanHighOverloadFromFullMode, currentMode == .full {
             return ReplanSuggestion(
                 reason: .overloaded,
                 recommendedMode: .reduced,
@@ -603,7 +1048,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
         let signals = Set(liveExecutionState.signals)
         guard !signals.isEmpty || liveExecutionState.shouldSuggestReplan else { return nil }
 
-        if signals.contains(.routinePausedTooLong) || signals.contains(.repeatedRebuilds) {
+        if score.rebuildPressure >= AdaptiveHeuristicThresholds.replanRebuildPressure || signals.contains(.routinePausedTooLong) || signals.contains(.repeatedRebuilds) {
             return ReplanSuggestion(
                 reason: .overloaded,
                 recommendedMode: .minimum,
@@ -614,7 +1059,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
             )
         }
 
-        if signals.contains(.taskStartingLate) && signals.contains(.taskNotStartedAfterCue) {
+        if score.startFrictionPressure >= AdaptiveHeuristicThresholds.replanStartFriction || (signals.contains(.taskStartingLate) && signals.contains(.taskNotStartedAfterCue)) {
             return ReplanSuggestion(
                 reason: .stuck,
                 recommendedMode: currentMode == .full ? .reduced : currentMode,
@@ -625,7 +1070,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
             )
         }
 
-        if signals.contains(.routineCueNotLanding) || liveExecutionState.transitionWindow.needsAttention {
+        if score.transitionPressure >= AdaptiveHeuristicThresholds.replanTransitionPressure || signals.contains(.routineCueNotLanding) || liveExecutionState.transitionWindow.needsAttention {
             return ReplanSuggestion(
                 reason: .transition,
                 recommendedMode: currentMode == .full ? .reduced : currentMode,
@@ -636,7 +1081,7 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
             )
         }
 
-        if estimatedState.executionState == .overloaded || estimatedState.overloadRisk >= 0.75 {
+        if score.overloadPressure >= AdaptiveHeuristicThresholds.replanSensoryOverload || estimatedState.executionState == .overloaded || estimatedState.overloadRisk >= 0.75 {
             return ReplanSuggestion(
                 reason: .sensory,
                 recommendedMode: .minimum,
@@ -659,6 +1104,105 @@ struct HeuristicAdaptiveReplanEngine: AdaptiveReplanEngine {
         }
 
         return nil
+    }
+}
+
+struct ReplanDecisionFeatures {
+    let liveExecutionState: LiveExecutionState
+    let liveHealthState: LiveHealthState
+    let estimatedState: EstimatedState
+    let currentMode: PlanMode
+    let assessment: DayAssessment
+    let profileSettings: ProfileSettings
+}
+
+struct ReplanDecisionScore {
+    let overloadPressure: Double
+    let transitionPressure: Double
+    let startFrictionPressure: Double
+    let rebuildPressure: Double
+}
+
+protocol ReplanDecisionScoring {
+    func score(features: ReplanDecisionFeatures) -> ReplanDecisionScore
+}
+
+struct HeuristicReplanDecisionScorer: ReplanDecisionScoring {
+    func score(features: ReplanDecisionFeatures) -> ReplanDecisionScore {
+        let evidenceFactor = min(
+            1.0,
+            max(
+                0.55,
+                0.45 + (Double(features.liveExecutionState.signals.count) * 0.18) + (features.liveHealthState.confidence * 0.37)
+            )
+        )
+        let healthPressure: Double = {
+            switch features.liveHealthState.status {
+            case .stable:
+                return 0.2
+            case .strained:
+                return 0.62
+            case .overwhelmed:
+                return 0.9
+            }
+        }()
+        let executionSignalPressure = min(1.0, Double(features.liveExecutionState.signals.count) * 0.18)
+        let estimatedOverloadPressure = min(1.0, features.estimatedState.overloadRisk + (features.estimatedState.executionState == .overloaded ? 0.15 : 0))
+        let modeMismatchPressure = features.assessment.recommendedMode == features.currentMode ? 0.0 : 0.08
+        let rawOverloadPressure = max(healthPressure, (estimatedOverloadPressure * 0.65) + (executionSignalPressure * 0.35) + modeMismatchPressure)
+        let overloadPressure = min(1.0, rawOverloadPressure * evidenceFactor)
+
+        let transitionRisk = features.liveExecutionState.transitionWindow.risk
+        let transitionWindowPressure = features.liveExecutionState.transitionWindow.needsAttention ? 0.2 : 0
+        let transitionSignalPressure = features.liveExecutionState.signals.contains(.routineCueNotLanding) ? 0.2 : 0
+        let profileTransitionBias: Double = {
+            switch features.profileSettings.neurotype {
+            case .asd:
+                return 0.08
+            case .audhd:
+                return 0.05
+            case .adhd, .neurotypical, .other:
+                return 0
+            }
+        }()
+        let transitionPressure = min(1.0, (transitionRisk + transitionWindowPressure + transitionSignalPressure + profileTransitionBias) * evidenceFactor)
+
+        let startSignals = features.liveExecutionState.signals.filter { $0 == .taskStartingLate || $0 == .taskNotStartedAfterCue }.count
+        let startFrictionBias: Double = {
+            switch features.profileSettings.neurotype {
+            case .adhd:
+                return 0.08
+            case .audhd:
+                return 0.05
+            case .asd, .neurotypical, .other:
+                return 0
+            }
+        }()
+        let startFrictionPressure = min(1.0, ((Double(startSignals) * 0.35) + (features.estimatedState.executionState == .drifting ? 0.15 : 0) + startFrictionBias) * evidenceFactor)
+
+        let roleRebuildBias: Double = {
+            switch features.profileSettings.userRole {
+            case .selfPlanner:
+                return 0
+            case .caregiver:
+                return 0.08
+            case .familyCoordinator:
+                return 0.12
+            }
+        }()
+        let rebuildPressure = min(
+            1.0,
+            ((features.liveExecutionState.signals.contains(.repeatedRebuilds) ? 0.7 : 0.0)
+                + (features.liveExecutionState.signals.contains(.routinePausedTooLong) ? 0.3 : 0.0)
+                + roleRebuildBias) * evidenceFactor
+        )
+
+        return ReplanDecisionScore(
+            overloadPressure: overloadPressure,
+            transitionPressure: transitionPressure,
+            startFrictionPressure: startFrictionPressure,
+            rebuildPressure: rebuildPressure
+        )
     }
 }
 
@@ -717,6 +1261,22 @@ struct HeuristicInsightsEngine: InsightsEngine {
             )
         }
 
+        if let weekdayDelay = baselines.weekdayTypicalCueResponseDelaySeconds,
+           let weekendDelay = baselines.weekendTypicalCueResponseDelaySeconds,
+           abs(weekdayDelay - weekendDelay) >= 60 {
+            insights.append(
+                InsightCard(
+                    category: .cues,
+                    priority: .medium,
+                    title: "Cue timing differs by day context",
+                    summary: weekdayDelay > weekendDelay
+                        ? "Weekday responses are slower than weekend responses."
+                        : "Weekend responses are slower than weekday responses.",
+                    supportingDetail: "Weekday average is \(Int(weekdayDelay.rounded()))s and weekend average is \(Int(weekendDelay.rounded()))s, so support timing should stay context-aware."
+                )
+            )
+        }
+
         if tooIntenseCount >= 3 {
             insights.append(
                 InsightCard(
@@ -737,6 +1297,18 @@ struct HeuristicInsightsEngine: InsightsEngine {
                     title: "Some cues are arriving after momentum starts",
                     summary: "You are sometimes already moving by the time support appears.",
                     supportingDetail: "That pattern usually means redundant escalation can back off without losing continuity."
+                )
+            )
+        }
+
+        if baselines.cueOverstimulationRate >= 0.25 {
+            insights.append(
+                InsightCard(
+                    category: .cues,
+                    priority: .medium,
+                    title: "Cue intensity may still be too high",
+                    summary: "Recent feedback suggests support is occasionally adding pressure.",
+                    supportingDetail: "About \(Int((baselines.cueOverstimulationRate * 100).rounded()))% of recent cue responses signaled overstimulation."
                 )
             )
         }

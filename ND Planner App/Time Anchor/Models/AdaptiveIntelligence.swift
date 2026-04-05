@@ -238,6 +238,69 @@ struct ReplanSuggestion: Hashable, Codable {
     let shouldPrompt: Bool
 }
 
+struct IntelligenceFeatureFlags: Hashable, Codable {
+    var adaptiveReminderEnabled: Bool = true
+    var adaptiveReplanEnabled: Bool = true
+    var dataQualityGatingEnabled: Bool = true
+    var decisionTelemetryEnabled: Bool = true
+}
+
+struct AdaptiveDecisionTelemetry: Identifiable, Hashable, Codable {
+    enum Kind: String, Hashable, Codable {
+        case reminder
+        case replan
+    }
+
+    let id: UUID
+    let timestamp: Date
+    let kind: Kind
+    let title: String
+    let detail: String
+
+    init(id: UUID = UUID(), timestamp: Date = Date(), kind: Kind, title: String, detail: String) {
+        self.id = id
+        self.timestamp = timestamp
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+    }
+}
+
+enum ReplanReason: String, CaseIterable, Identifiable, Hashable, Codable {
+    case overloaded
+    case stuck
+    case transition
+    case sensory
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .overloaded:
+            return "Too much at once"
+        case .stuck:
+            return "Hard to start"
+        case .transition:
+            return "Trouble switching"
+        case .sensory:
+            return "Sensory load is high"
+        }
+    }
+
+    var recommendation: String {
+        switch self {
+        case .overloaded:
+            return "Shift to a reduced or minimum day and protect only the essentials."
+        case .stuck:
+            return "Shrink the first task and stay with one anchor until momentum returns."
+        case .transition:
+            return "Use a softer handoff and make the next anchor extremely explicit."
+        case .sensory:
+            return "Lower stimulation, reduce transitions, and preserve recovery."
+        }
+    }
+}
+
 enum InsightCategory: String, CaseIterable, Hashable, Codable, Identifiable {
     case transitions
     case cues
@@ -658,7 +721,15 @@ struct PersonalizedBaselines: Hashable, Codable {
     let typicalHeartRateVariabilityMilliseconds: Double?
     let typicalRespiratoryRate: Double?
     let typicalCueResponseDelaySeconds: Double?
+    let weekdayTypicalCueResponseDelaySeconds: Double?
+    let weekendTypicalCueResponseDelaySeconds: Double?
     let typicalLateStartMinutes: Double?
+    let preferredLeadTimeMinutes: Double?
+    let preferredRepeatIntervalMinutes: Double?
+    let noReminderStartHour: Int?
+    let noReminderEndHour: Int?
+    let cueOverstimulationRate: Double
+    let cueAlreadyMovingRate: Double
     let rebuildsPerDay: Double
     let transitionMissRate: Double
     let routineResumeRate: Double
@@ -671,10 +742,52 @@ struct PersonalizedBaselines: Hashable, Codable {
         typicalHeartRateVariabilityMilliseconds: nil,
         typicalRespiratoryRate: nil,
         typicalCueResponseDelaySeconds: nil,
+        weekdayTypicalCueResponseDelaySeconds: nil,
+        weekendTypicalCueResponseDelaySeconds: nil,
         typicalLateStartMinutes: nil,
+        preferredLeadTimeMinutes: nil,
+        preferredRepeatIntervalMinutes: nil,
+        noReminderStartHour: nil,
+        noReminderEndHour: nil,
+        cueOverstimulationRate: 0,
+        cueAlreadyMovingRate: 0,
         rebuildsPerDay: 0,
         transitionMissRate: 0,
         routineResumeRate: 0,
         typicalRecoveryScore: nil
+    )
+}
+
+struct IntelligenceReplaySummary: Hashable, Codable {
+    let totalDays: Int
+    let rebuildsPerDay: Double
+    let transitionMissesPerDay: Double
+    let averageLateStartMinutes: Double?
+    let cueActedOnRate: Double?
+    let routineResumeRate: Double?
+
+    static let empty = IntelligenceReplaySummary(
+        totalDays: 0,
+        rebuildsPerDay: 0,
+        transitionMissesPerDay: 0,
+        averageLateStartMinutes: nil,
+        cueActedOnRate: nil,
+        routineResumeRate: nil
+    )
+}
+
+struct IntelligenceDataQualityReport: Hashable, Codable {
+    let trailingWindowDays: Int
+    let missingOutcomeDays: Int
+    let missingHealthSnapshotDays: Int
+    let cueResponsesRecorded: Int
+    let hasSufficientSignalCoverage: Bool
+
+    static let empty = IntelligenceDataQualityReport(
+        trailingWindowDays: 14,
+        missingOutcomeDays: 14,
+        missingHealthSnapshotDays: 14,
+        cueResponsesRecorded: 0,
+        hasSufficientSignalCoverage: false
     )
 }
